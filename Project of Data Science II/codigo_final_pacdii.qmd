@@ -1,0 +1,4448 @@
+---
+title: "Trabalho PACD2 final grupo_X"
+format: revealjs
+editor: visual
+---
+
+## Bibliotecas utilizadas
+
+```{r}
+library(openxlsx)
+library(dplyr)
+library(RSQLite)
+library(DBI)
+library(ggplot2)
+library(tidyr)
+library(lubridate)
+library(patchwork)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+# 1º instalar e chamar o package remotes
+#install.packages("remotes")
+library(remotes)
+# 2º instalar a biblioteca ggpatterns e dar skip nos updates quando perguntar
+#remotes::install_github("coolbutuseless/ggpattern")
+#3º chamar a biblioteca ggpatterns
+library(ggpattern)
+```
+
+## Importações das base de dados
+
+### Base de dados dos Condutores 2023
+
+```{r}
+# Importar a base de dados referentes aos condutores
+condutores_23<-read.xlsx("C:/Users/mfppa1/OneDrive - ISCTE-IUL/Universidade/3Ano_2Semestre/PACDII/Projeto/acidentes-2023.xlsx", sep=";", sheet = "30dias_cond")
+
+# Dimensão dos dados
+dim(condutores_23)
+
+# Mostrar nomes das colunas
+colnames(condutores_23)
+
+#Primeiras 5 linhas
+head(condutores_23)
+
+
+#Ajustar os nomes das variáveis
+colnames(condutores_23) <- gsub(";", ".", colnames(condutores_23))
+
+#Tipos das variáveis antes da conversão
+tipos_originais <- sapply(condutores_23, class)
+
+#Passar as variáveis não numéricas para categóricas
+for (i in 1:ncol(condutores_23)){
+  if (class(condutores_23[,i])=="character"){
+    condutores_23[, i] <- factor(condutores_23[, i], levels = unique(condutores_23[, i]))
+  }
+}
+
+#Tipos das variáveis após a conversão
+tipos_ajustados <- sapply(condutores_23, class)
+
+#Comparar para ver quais colunas foram alteradas 
+variaveis_convertidas <- names(tipos_ajustados[tipos_originais != tipos_ajustados & tipos_ajustados == "character"])
+print(variaveis_convertidas)
+
+```
+
+### Base de dados dos Passageiros 2023
+
+```{r}
+
+#Importar a base de dados referente aos passageiros
+passageiros_23<-read.xlsx("C:/Users/mfppa1/OneDrive - ISCTE-IUL/Universidade/3Ano_2Semestre/PACDII/Projeto/acidentes-2023.xlsx", sep=";", sheet = "30dias_psg")
+
+# dimensão dos dados
+dim(passageiros_23)
+
+# Mostrar os nomes das 25 colunas
+colnames(passageiros_23)
+
+# Primeiras 5 observações
+head(passageiros_23)
+
+
+#Ajustar os nomes das variáveis
+colnames(passageiros_23) <- gsub(";", ".", colnames(passageiros_23)) 
+
+#Tipos das variáveis antes da conversão
+tipos_originais <- sapply(passageiros_23, class)
+
+#Passar as variáveis não numéricas para categóricas
+for (i in 1:ncol(passageiros_23)){
+  if (class(passageiros_23[,i])=="character"){
+    passageiros_23[, i] <- factor(passageiros_23[, i], levels = unique(passageiros_23[, i]))
+  }
+}
+
+#Tipos das variáveis após a conversão
+tipos_ajustados <- sapply(passageiros_23, class)
+
+#Comparar para ver quais colunas foram alteradas 
+variaveis_convertidas <- names(tipos_ajustados[tipos_originais != tipos_ajustados & tipos_ajustados == "character"])
+print(variaveis_convertidas)
+```
+
+### Base de dados referente aos Acidentes de 2023
+
+```{r}
+#Importar a base de dados refeerete aos acidentes
+acidentes_23<-read.xlsx("C:/Users/mfppa1/OneDrive - ISCTE-IUL/Universidade/3Ano_2Semestre/PACDII/Projeto/acidentes-2023.xlsx", sep=";", sheet = "30dias_acV")
+
+# dimensão dos dados
+dim(acidentes_23)
+
+# Mostrar os nomes das 25 colunas
+colnames(acidentes_23)
+
+# Primeiras 5 observações
+head(acidentes_23)
+
+
+#Ajustar os nomes das variáveis
+colnames(acidentes_23) <- gsub(";", ".", colnames(acidentes_23)) 
+
+#Tipos das variáveis antes da conversão
+tipos_originais <- sapply(acidentes_23, class)
+
+#Passar as variáveis não numéricas para categóricas
+for (i in 1:ncol(acidentes_23)){
+  if (class(acidentes_23[,i])=="character"){
+    acidentes_23[, i] <- factor(acidentes_23[, i], levels = unique(acidentes_23[, i]))
+  }
+}
+
+#Tipos das variáveis após a conversão
+tipos_ajustados <- sapply(acidentes_23, class)
+
+#Comparar para ver quais colunas foram alteradas 
+variaveis_convertidas <- names(tipos_ajustados[tipos_originais != tipos_ajustados & tipos_ajustados == "character"])
+print(variaveis_convertidas)
+
+```
+
+### Base de dados de acidentes, passageiros e condutores referentes aos anos entre 2010 e 2019
+
+```{r}
+#lista de anos e diretoria dos dados
+years <- c(2010:2019)
+diretoria <- "C:/Users/mfppa1/OneDrive - ISCTE-IUL/Universidade/3Ano_2Semestre/PACDII/Projeto/dados/"
+
+# nome da cada 'sheet' do excel de interesse
+cond_sheet <- "30 Dias_Cond_Veic"
+pass_sheet <- "30 Dias_Passag"
+acc_sheet <- "30 Dias _ Acidentes"
+
+# import dos ficheiros para R
+for (year in years) {
+  # nome do ficheiro
+  file_name <- paste0(diretoria, "acidentes-", year, ".xlsx")
+  
+  # leitura da 'sheet' em dataframes com nomes equivalentes
+  assign(paste0("condutores_", year), read.xlsx(file_name, sheet = cond_sheet))
+  assign(paste0("passageiros_", year), read.xlsx(file_name, sheet = pass_sheet))
+  assign(paste0("acidentes_", year), read.xlsx(file_name, sheet = acc_sheet))
+}
+
+# criação do dataframe vazio
+acidentes_combined <- data.frame()
+for (year in years) {
+  # obter o dataframe do ano pretendido
+  df <- get(paste0("acidentes_", year))
+  
+  # Adicionar a coluna ano com o respetivo ano
+  df$year <- year
+  
+  # juntar o dataframe desta iteração ao dataframe conjunto 
+  acidentes_combined <- rbind(acidentes_combined, df)
+}
+
+# criação do dataframe vazio
+condutores_combined <- data.frame()
+for (year in years) {
+  # obter o dataframe do ano pretendido
+  df <- get(paste0("condutores_", year))
+  
+  # Adicionar a coluna ano com o respetivo ano
+  df$year <- year
+  
+  # juntar o dataframe desta iteração ao dataframe conjunto 
+  condutores_combined <- rbind(condutores_combined, df)
+}
+
+# criação do dataframe vazio
+passageiros_combined <- data.frame()
+for (year in years) {
+  # obter o dataframe do ano pretendido
+  df <- get(paste0("passageiros_", year))
+  
+  # Adicionar a coluna ano com o respetivo ano
+  df$year <- year
+  
+  # juntar o dataframe desta iteração ao dataframe conjunto 
+  passageiros_combined <- rbind(passageiros_combined, df)
+}
+
+```
+
+## Tratamento e criação de variáveis
+
+Na seguinte tabela encontram-se todas as variáveis que considerámos relevantes/possivelmente relevantes para a execução do projeto, e como tal efetuámos o seu tratamento para as bases de dados dos passageiros, condutores e acidentes, quer para 2023, quer para os restantes anos combinados (2010-2019).
+
+|         Passageiros          |         Condutores          |    Acidentes     |
+|:----------------------------:|:---------------------------:|:----------------:|
+|       *Id de Acidente*       |      *Id de Acidente*       | *Id de Acidente* |
+|        *Data e hora*         |        *Data e hora*        | *Dia da semana*  |
+|      *Id de Passageiro*      |           *Sexo*            |  *Localizações*  |
+|      *Lesões a 30 dias*      |     *Lesões a 30 dias*      |                  |
+|            *Sexo*            | *Acessórios dos Condutores* |                  |
+| *Acessórios dos Passageiros* |   *Categoria do Veículo*    |                  |
+|          *Distrito*          |     *Ano de matricula*      |                  |
+|          *Concelho*          |         *Distrito*          |                  |
+|            *Ano*             |         *Concelho*          |                  |
+|        *Grupo Etário*        |            *Ano*            |                  |
+|                              |       *Grupo Etário*        |                  |
+
+### Acidentes 2023
+
+#### Passar a variável "Localizações" para uma nova binária
+
+```{r}
+unique(acidentes_23$Localizações)
+acidentes_23$Dentro.Local <- ifelse(acidentes_23$Localizações == "Dentro das localidades", 1, 0)
+acidentes_23 <- select(acidentes_23, -Localizações)
+```
+
+#### Separar a variável Datahora nas variáveis data e hora
+
+Decidimos analisar a correlação entre a utilização de dispositivos de segurança e grupo etário por altura no ano (época, mês e período do dia), para tal foram criadas e tratadas variáveis, e posteriormente inseridas e analisadas para os passageiros e condutores.
+
+```{r}
+
+acidentes_23 <- acidentes_23 %>%
+  separate(Datahora, into = c("data", "hora"), sep = " ") %>%
+   mutate(
+    data = as.Date(data, format = "%Y:%m:%d"), # Converter data para Date
+    hora = format(strptime(hora, "%H:%M:%S"), "%H") # Garantir formato da hora  
+   )
+```
+
+#### Criar a variável numérica "mês" (a partir da data)
+
+```{r}
+acidentes_23$mês <- as.numeric(format(as.Date(acidentes_23$data), "%m"))
+
+#unique(acidentes_23$mês) #valores validados
+#sum(is.na(acidentes_32$mês)) #não existem valores omissos na variável
+# boxplot( #Boxplot do mês
+#   acidentes_23$mês,
+#   main = "Distribuição dos meses dos acidentes", 
+#   col = "#5f9ea0",                            
+#   ylab = "mês",                                 
+#   ylim = c(1, 12)                              
+# ) 
+# não existem outliers nesta variável, é possível denotar que para 2023, 75% dos acidentes ocorreram até finais de julho
+
+acidentes_23$mês <- month.abb[acidentes_23$mês] #categorizar a variável mês para melhor interpretatividade
+```
+
+#### Criar a variável numérica "hora" (a partir da data)
+
+```{r}
+acidentes_23$hora <- as.numeric(acidentes_23$hora) #passar hora para formato numérico
+#unique(acidentes_23$hora) #valores validados
+#sum(is.na(acidentes_23$mês)) #não existem valores omissos para a hora
+acidentes_23$hora[acidentes_23$hora == 0] <- 24 #passar o valor 0 para 24 (que corresponde à meia noite)
+
+# boxplot( #Boxplot da hora
+#   acidentes_23$hora,
+#   main = "Distribuição das horas dos acidentes", 
+#   col = "#d8bfd8",                            
+#   ylab = "hora",                                 
+#   ylim = c(0,24)                              
+# ) #não existem outliers
+
+#all(format(as.Date(acidentes_23$data), "%Y") == "2023") #o ano em data é sempre 2023
+
+#sum(is.na(acidentes_23$data)) #não existem valores omissos na data
+
+#dias_por_mes <- acidentes_23 %>% 
+#  group_by(mês) %>%
+#  summarise(dias_presentes = list(unique(dia)))
+#dias_por_mes  #verificar os dias únicos por mês
+
+acidentes_23 <- subset(acidentes_23, select=-Hora)
+
+```
+
+#### Criar a variável "periodo_dia"
+
+```{r}
+# Função para criar a variável periodo dia 
+categorizar_periodo <- function(hora, data){
+  # Identificar se é horário de verão ou inverno
+  horario_verao <- as.Date("last Sunday of March", format = "%d %B") <= data & 
+                   data <= as.Date("last Sunday of October", format = "%d %B")
+  # Categorizar período do dia
+  if (hora >= 0 & hora < 6) {
+    return("madrugada") #das 24h às 6h
+  } else if (hora >= 6 & hora < 9) {
+    return("ponta início do dia") #das 6h às 9h
+  } else if (hora >= 9 & hora < 12) {
+    return("manhã") #das 9h às 12h
+  } else if (hora >= 12 & hora < 14) {
+    return("horas de almoço") #das 12h 
+  } else if (hora >= 14 & hora < 17) {
+    return("tarde") #das 14h às 17h
+  } else if (hora >= 17 & hora < 21) {
+    return("ponta final do dia") #das 17h às 20h
+  } else {
+    return("noite") #das 21h às 23h 
+  }
+}
+
+#Criar a variável "periodo_dia"
+
+acidentes_23 <- acidentes_23 %>%
+  mutate(
+    periodo_dia = mapply(categorizar_periodo, hora, as.Date(data))
+  )
+```
+
+#### Criar a variável "época"
+
+```{r}
+# Com as categorias:
+
+# natal e ano novo (19 de dezembro a 2 de janeiro)
+# verão (junho, julho e agosto)
+# peregrinação a fatima (12 e 13 de maio)
+# pascoa (6 a 10 de abril em 2023)
+# carnaval (17 a 22 de fevereiro em 2023)
+
+#Função para criar variável época com as categorias prévias
+acidentes_23 <- acidentes_23 %>%
+  mutate(
+    época = case_when(
+      # Natal e Ano Novo (19 de dezembro a 2 de janeiro)
+      (data >= as.Date("2023-12-19") & data <= as.Date("2023-12-31")) | (data >= as.Date("2023-01-01") & data <= as.Date("2023-01-02")) ~ "natal e ano novo",
+      # Verão (junho, julho e agosto)
+      month(data) %in% c(6, 7, 8) ~ "verão",
+      # Peregrinação a Fátima (12 e 13 de maio)
+      data >= as.Date("2023-05-12") & data <= as.Date("2023-05-13") ~ "peregrinação fátima",
+      # Páscoa (6 a 10 de abril)
+      data >= as.Date("2023-04-06") & data <= as.Date("2023-04-10") ~ "páscoa",
+      # Carnaval (17 a 22 de fevereiro)
+      data >= as.Date("2023-02-17") & data <= as.Date("2023-02-22") ~ "carnaval",
+      # Caso não pertença a nenhuma categoria
+      TRUE ~ "normal"
+    )
+  )
+```
+
+#### Criar a variável "dia_da_semana"
+
+```{r}
+acidentes_23 <- acidentes_23 %>%
+  mutate(
+    data = as.Date(data),  
+    dia_da_semana = weekdays(data)  
+  )
+
+# Verificar primeiras obs
+head(acidentes_23) 
+```
+
+#### Visualizações
+
+```{r}
+# Nº de acidentes por período do dia 
+contagens_periodo_dia <- table(acidentes_23$periodo_dia)
+contagens_periodo_dia_df <- as.data.frame(contagens_periodo_dia)
+colnames(contagens_periodo_dia_df) <- c("Período do Dia", "Nº Acidentes")
+contagens_periodo_dia_df
+
+# Nº de acidentes por mês
+contagens_mes <- table(acidentes_23$mês)
+contagens_mes_df <- as.data.frame(contagens_mes)
+colnames(contagens_mes_df) <- c("Mês", "Nº Acidentes")
+contagens_mes_df
+
+# Nº de acidentes por época
+contagens_epoca <- table(acidentes_23$época)
+contagens_epoca_df <- as.data.frame(contagens_epoca)
+colnames(contagens_epoca_df) <- c("Época", "Nº Acidentes")
+contagens_epoca_df
+
+# Nº de acidentes por dia da semana
+contagens_dia_semana <- table(acidentes_23$dia_da_semana)
+contagens_dia_semana_df <- as.data.frame(contagens_dia_semana)
+colnames(contagens_dia_semana_df) <- c("Dia da Semana", "Nº Acidentes")
+contagens_dia_semana_df
+
+```
+
+### Condutores 2023
+
+#### Criação da variável 'Grupo.Etário'
+
+```{r}
+condutores_23$`Grupo.Etário` <- with(condutores_23, case_when(
+  `Condutor.Gr.Etario(<=5).SUM` == 1 | `Condutor.Gr.Etario(6-9).SUM` == 1 |
+  `Condutor.Gr.Etario(10-14).SUM` == 1 | `Condutor.Gr.Etario(15-17).SUM` == 1 |
+  `Condutor.Gr.Etario(18-20).SUM` == 1 | `Condutor.Gr.Etario(21-24).SUM` == 1 ~ "young",
+  `Condutor.Gr.Etario(25-29).SUM` == 1 | `Condutor.Gr.Etario(30-34).SUM` == 1 | `Condutor.Gr.Etario(35-39).SUM` == 1 | `Condutor.Gr.Etario(40-44).SUM` == 1 | `Condutor.Gr.Etario(45-49).SUM` == 1 | `Condutor.Gr.Etario(50-54).SUM` == 1 | `Condutor.Gr.Etario(55-59).SUM` == 1 | `Condutor.Gr.Etario(60-64).SUM` == 1 ~ "adult", `Condutor.Gr.Etario(65-69).SUM` == 1 | `Condutor.Gr.Etario(70-74).SUM` == 1 | `Condutor.Gr.Etario(>=75).SUM` == 1 ~ "Senior",
+  `Condutor.Gr.Etario(Não.Def.).SUM` == 1 ~ NA_character_,
+  TRUE ~ NA_character_ # Caso nenhuma condição seja atendida
+))
+
+# condutores_23$`Grupo.Etário` <- with(condutores_23, case_when(
+#   `Condutor.Gr.Etario(<=5).SUM` == 1 | `Condutor.Gr.Etario(6-9).SUM` == 1 ~ "Criança",
+#   `Condutor.Gr.Etario(10-14).SUM` == 1 ~ "Criança",
+#   `Condutor.Gr.Etario(15-17).SUM` == 1 ~ "Adolescente",
+#   `Condutor.Gr.Etario(18-20).SUM` == 1 | `Condutor.Gr.Etario(21-24).SUM` == 1 ~ "Jovem",
+#   `Condutor.Gr.Etario(25-29).SUM` == 1 | 
+#   `Condutor.Gr.Etario(30-34).SUM` == 1 | `Condutor.Gr.Etario(35-39).SUM` == 1 | 
+#   `Condutor.Gr.Etario(40-44).SUM` == 1 | `Condutor.Gr.Etario(45-49).SUM` == 1 | 
+#   `Condutor.Gr.Etario(50-54).SUM` == 1 | `Condutor.Gr.Etario(55-59).SUM` == 1 ~ "Adulto",
+#   `Condutor.Gr.Etario(60-64).SUM` == 1 | `Condutor.Gr.Etario(65-69).SUM` == 1 ~ "Senior",
+#   `Condutor.Gr.Etario(70-74).SUM` == 1 | `Condutor.Gr.Etario(>=75).SUM` == 1 ~ "Idoso",
+#   `Condutor.Gr.Etario(Não.Def.).SUM` == 1 ~ NA_character_,
+#   TRUE ~ NA_character_ # Caso nenhuma condição seja atendida
+# ))
+
+#Verificar a distribuição dos grupos etários
+table(condutores_23$`Grupo.Etário`, useNA = "ifany")
+
+#Passar os valores não definidos para NA
+condutores_23$`Acessórios.Condutores`[condutores_23$`Acessórios.Condutores` == "NÃO DEFINIDO"] <- NA
+
+#Remoção de NAs 
+sum(is.na(condutores_23$`Grupo.Etário`)) # 2326 NAs
+
+condutores_23 <- condutores_23 %>%
+  filter( !(is.na(Grupo.Etário)))
+```
+
+<!-- #### Tratamento de Valores Omissos para o grupo etário, tipo de lesão e dispositivos de segurança -->
+
+<!-- ```{r} -->
+
+<!-- # Valores omissos -->
+
+<!-- #grupo etário: -->
+
+<!-- sum(is.na(condutores_23$'Grupo.Etário')) #existem 2326 NA's para o grupo etário -->
+
+<!-- sum(is.na(condutores_23$'Lesões.a.30.dias')) #não existem NA's para o tipo de lesão -->
+
+<!-- #grupo etário -->
+
+<!-- #dispositivos de segurança: -->
+
+<!-- sum(is.na(condutores_23$'Acessórios.Condutores')) #existem 3303 NA's nos acessórios condutores -->
+
+<!-- #Observar linhas onde o grupo etário é NA -->
+
+<!-- linhas_na_g <- condutores_23 %>% -->
+
+<!--   filter(is.na(`Grupo.Etário`)) -->
+
+<!-- head(linhas_na_g,15) -->
+
+<!-- # Remover observações onde grupo etário e dispositivos de segurança são ambos NA -->
+
+<!-- condutores_23 <- condutores_23 %>% -->
+
+<!--   filter(!(is.na('Grupo.Etário') & is.na('Acessórios.Condutores'))) -->
+
+<!-- sum(is.na(condutores_23$'Grupo.Etário')) #há agora 2326 valores omissos no grupo etário -->
+
+<!-- ``` -->
+
+#### Tratamento da variável "Lesões.a.30.dias"
+
+```{r}
+# Únicos para para os condutores de 2010 a 2019:
+unique(condutores_23$Lesões.a.30.dias)
+
+
+# Tabela de frequências absolutas de condutores com  Lesões a 30 dias para 2023:
+tab_frequ_abs_cond_23_lesoes <- table(condutores_23$Lesões.a.30.dias)
+tab_frequ_abs_cond_23_lesoes
+  
+# Tabela de frequências relativas de condutores com Lesões a 30 dias para 2023:
+round(prop.table(tab_frequ_abs_cond_23_lesoes), 2)
+```
+
+#### Tratamento da variável "Ano.Matrícula"
+
+```{r}
+#Elementos únicos 
+unique(condutores_23$Ano.matricula)
+
+# Vai desde Existem Na's nesta variável. remoção:
+
+# Remoção das linhas com Na's
+condutores_23 <- condutores_23 %>%
+  filter( !(is.na(Ano.matricula)))
+
+#Tabela de frequências absolutas desta variável
+tab_frequ_abs_cond_23_ano <- sort(table(condutores_23$Ano.matricula), decreasing = TRUE)
+tab_frequ_abs_cond_23_ano
+
+#Tabela de frequências relativas desta variável
+head(round(prop.table(tab_frequ_abs_cond_23_ano), 2))
+```
+
+#### Tratamento da variável "Categoria.Veículos"
+
+```{r}
+condutores_23<- condutores_23 %>%
+  mutate(safety_system = case_when(
+    Categoria.Veículos == "Ciclomotor" |  
+      Categoria.Veículos == "Motociclo cilindrada > 125cc" |
+      Categoria.Veículos == "Motociclo cilindrada <= 125cc" | 
+      Categoria.Veículos == "Motociclos" | 
+      Categoria.Veículos == "Triciclo" | 
+      Categoria.Veículos == "Quadriciclo" ~ "capacete",
+    Categoria.Veículos == 'Automóvel ligeiro' | 
+      Categoria.Veículos == 'Automóvel pesado' ~ "cinto de segurança",
+    TRUE ~ "isento"
+  ))
+```
+
+#### Tratamento da variável "Acessórios.Condutores"
+
+```{r}
+# Únicos para para os condutores de 2010 a 2019:
+unique(condutores_23$Acessórios.Condutores)
+
+# Tabela de frequências absolutas de condutores com  Lesões a 30 dias para 2023:
+tab_frequ_abs_cond_23_lesoes <- table(condutores_23$Acessórios.Condutores)
+tab_frequ_abs_cond_23_lesoes
+
+
+  
+# Tabela de frequências relativas de condutores com Lesões a 30 dias para 2023:
+round(prop.table(tab_frequ_abs_cond_23_lesoes), 2)
+
+# Remoção de NAs
+sum(is.na(condutores_23$Acessórios.Condutores))
+
+condutores_23 <- condutores_23 %>%
+  filter( !(is.na(Acessórios.Condutores)))
+
+
+
+condutores_23 <- condutores_23  %>%
+  mutate(Acessórios.Condutores = case_when(
+    Acessórios.Condutores == "Sem uso de cinto/capacete" & 
+    safety_system == "cinto de segurança" ~ "Sem uso de cinto",
+    Acessórios.Condutores == "Sem uso de cinto/capacete" & 
+    safety_system == "capacete" ~ "Sem uso de capacete",
+    Acessórios.Condutores == "Sem uso de cinto/capacete" & 
+    safety_system == "isento" ~ "Isento",
+    TRUE ~ Acessórios.Condutores 
+  ))
+
+```
+
+#### Criação da variável "mês"
+
+```{r}
+# Adicionar mês aos condutores
+condutores_23 <- merge(condutores_23, 
+                    acidentes_23[, c("Id..Acidente", "mês")], 
+                    by = "Id..Acidente", 
+                    all.x = TRUE)  # Mantendo todas as observações de condutores
+
+#head(condutores_23)
+```
+
+#### Criação da variável "periodo_dia"
+
+```{r}
+# Adicionar periodo_dia aos condutores
+condutores_23 <- merge(condutores_23, 
+                    acidentes_23[, c("Id..Acidente", "periodo_dia")], 
+                    by = "Id..Acidente", 
+                    all.x = TRUE)  # Mantendo todas as observações de condutores
+
+#head(condutores_23)
+```
+
+#### Criação da variável "época"
+
+```{r}
+# Adicionar época aos condutores
+condutores_23 <- merge(condutores_23, 
+                    acidentes_23[, c("Id..Acidente", "época")], 
+                    by = "Id..Acidente", 
+                    all.x = TRUE)  # Mantendo todas as observações de condutores
+
+#head(condutores_23)
+```
+
+#### Criação da variável "dia_da_semana"
+
+```{r}
+# Adicionar dia da semana aos condutores
+condutores_23 <- merge(condutores_23, 
+                    acidentes_23[, c("Id..Acidente", "dia_da_semana")], 
+                    by = "Id..Acidente", 
+                    all.x = TRUE)  # Mantendo todas as observações de condutores
+
+#head(condutores_23)
+```
+
+### Tratamento da variável "Sexo"
+
+```{r}
+condutores_23 <- condutores_23[condutores_23$Sexo != "NÃO DEFINIDO", ]
+condutores_23$Sexo <- droplevels(condutores_23$Sexo)
+```
+
+#### Visualizações
+
+```{r}
+# Nº de acidentes por período do dia 
+contagens_periodo_dia <- table(condutores_23$periodo_dia)
+contagens_periodo_dia_df <- as.data.frame(contagens_periodo_dia)
+colnames(contagens_periodo_dia_df) <- c("Período do Dia", "Nº Acidentes")
+contagens_periodo_dia_df
+
+
+# Nº de acidentes por mês
+contagens_mes <- table(condutores_23$mês)
+contagens_mes_df <- as.data.frame(contagens_mes)
+colnames(contagens_mes_df) <- c("Mês", "Nº Acidentes")
+contagens_mes_df
+
+
+# Nº de acidentes por época
+contagens_epoca <- table(condutores_23$época)
+contagens_epoca_df <- as.data.frame(contagens_epoca)
+colnames(contagens_epoca_df) <- c("Época", "Nº Acidentes")
+contagens_epoca_df
+
+
+# Nº de acidentes por dia da semana
+contagens_dia_semana <- table(condutores_23$dia_da_semana)
+contagens_dia_semana_df <- as.data.frame(contagens_dia_semana)
+colnames(contagens_dia_semana_df) <- c("Dia da Semana", "Nº Acidentes")
+contagens_dia_semana_df
+
+```
+
+### Condutores 2010-2019
+
+#### Criação e tratamento da variável 'Grupo.Etário'
+
+```{r}
+condutores_combined$`Grupo.Etário` <- with(condutores_combined, case_when(
+  `Condutor.Gr.Etario(<=5).SUM` == 1 | `Condutor.Gr.Etario(6-9).SUM` == 1 |
+  `Condutor.Gr.Etario(10-14).SUM` == 1 | `Condutor.Gr.Etario(15-17).SUM` == 1 |
+  `Condutor.Gr.Etario(18-20).SUM` == 1 | `Condutor.Gr.Etario(21-24).SUM` == 1 ~ "young",
+  `Condutor.Gr.Etario(25-29).SUM` == 1 | `Condutor.Gr.Etario(30-34).SUM` == 1 |
+  `Condutor.Gr.Etario(35-39).SUM` == 1 | `Condutor.Gr.Etario(40-44).SUM` == 1 |
+  `Condutor.Gr.Etario(45-49).SUM` == 1 | `Condutor.Gr.Etario(50-54).SUM` == 1 |
+  `Condutor.Gr.Etario(55-59).SUM` == 1 ~ "adult",
+  `Condutor.Gr.Etario(65-69).SUM` == 1 | `Condutor.Gr.Etario(70-74).SUM` == 1 |
+  `Condutor.Gr.Etario(>=75).SUM` == 1 ~ "Senior",
+  `Condutor.Gr.Etario(Não.Def.).SUM` == 1 ~ NA_character_,
+  TRUE ~ "adult"  #aqui está representado o grupo etário dos 60-64 anos
+))
+
+# condutores_combined <- condutores_combined %>%
+#   mutate(Grupo.Etário = case_when(
+#     as.logical(`Condutor.Gr.Etario(<=5).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(6-9).SUM`) ~ "child",
+#     as.logical(`Condutor.Gr.Etario(10-14).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(15-17).SUM`) ~ "teenager",
+#     as.logical(`Condutor.Gr.Etario(18-20).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(21-24).SUM`) ~ "young_adult",
+#     as.logical(`Condutor.Gr.Etario(25-29).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(30-34).SUM`) ~ "adult",
+#     as.logical(`Condutor.Gr.Etario(35-39).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(40-44).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(45-49).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(50-54).SUM`) ~ "experienced_adult",
+#     as.logical(`Condutor.Gr.Etario(55-59).SUM`) ~ "older_adult",
+#     # falta aqui dos 60-64
+#     as.logical(`Condutor.Gr.Etario(65-69).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(70-74).SUM`) | 
+#     as.logical(`Condutor.Gr.Etario(>=75).SUM`) ~ "senior",
+#     as.logical(`Condutor.Gr.Etario(Não.Def.).SUM`) ~ NA,
+#     TRUE ~ "older_adult"
+#     
+#   ))
+
+table(condutores_combined$Grupo.Etário)
+# entre os 55-59 anos existem 34145 observações, e entre 60-64 existem 27388, 
+# o que é consistente com a ideia de que estas váriaveis são variáveis dummy e
+# que a ausência de todas as categorias implica a categoria ausente dos 60-64.´
+
+sum(is.na(condutores_combined$Grupo.Etário))
+length(condutores_combined$Grupo.Etário)
+# 1462 observações NA's, de 495982 observações totais.
+# Isto significa que apenas 0.3% das observações de idades estão em falta por 
+# serem não definidas (para todos os efeitos, pode-se considerar remover
+# estas observações)
+
+#Remoção de NAs 
+sum(is.na(condutores_combined$`Grupo.Etário`)) 
+
+condutores_combined <- condutores_combined %>%
+  filter( !(is.na(Grupo.Etário)))
+```
+
+#### Tratamento da variável "Sexo"
+
+```{r}
+condutores_combined <- condutores_combined[condutores_combined$Sexo != "NÃO DEFINIDO", ]
+table(condutores_combined$Sexo)
+
+sum(is.na(condutores_combined$Sexo)) #Não existem NAs nesta variável
+```
+
+#### Tratamento da variável "Categoria.Veículos"
+
+```{r}
+#table(condutores_combined$Categoria.Veículos)
+
+# Para além de verificar as regras da estrada para averiguar quais as categorias de
+# veiculos que são obrigadas a usar capacete e quais são obrigadas a usar cinto de
+# segurança, criou-se uma tabela que avalia a distribuição de Acessorios dos
+# condutores por categoria de veiculos, para verificar se os valores eram 
+# consistentes
+distribution <- condutores_combined %>%
+  count(Categoria.Veículos, Acessórios.Condutores) %>% 
+  pivot_wider(names_from = Acessórios.Condutores, values_from = n, values_fill = 0)
+#print(distribution)
+
+# os valores são de forma geral consistentes com as regras da estrada, a unica
+# exceção são os quadriciclos que se encontram com valores de cinto de segurança e 
+# capacete bastante semelhantes.
+
+# Agrupar todas as categorias de veiculos que requerem cinto de segurança, e todas as que requerem capacete separadamente.
+condutores_combined <- condutores_combined %>%
+  mutate(safety_system = case_when(
+    `Categoria.Veículos` == "Ciclomotor" |  
+    `Categoria.Veículos` == "Motociclo cilindrada > 125cc" |
+    `Categoria.Veículos` == "Motociclo cilindrada <= 125cc" | 
+    `Categoria.Veículos` == "Motociclos" | 
+    `Categoria.Veículos` == "Triciclo" | 
+    `Categoria.Veículos` == "Quadriciclo" ~ "capacete",
+    `Categoria.Veículos` == 'Automóvel ligeiro' | 
+    `Categoria.Veículos` == 'Automóvel pesado' ~ "cinto de segurança",
+    TRUE ~ "isento"
+  ))
+```
+
+#### Tratamento da variável "Acessórios.Condutores"
+
+```{r}
+unique(condutores_combined$Acessórios.Condutores)
+table(condutores_combined$Acessórios.Condutores)
+length(condutores_combined$Acessórios.Condutores)
+# Existem 5226 observações de 495982 que não estão definidas, cerca de 1.05% 
+# das observações totais, deve-se ponderar sobre a remoção das mesmas para 
+# facilitar a analise
+# Existe a separação de capacete e de cinto de segurança, o que torna a análise
+# mais interessante.
+# Contudo, existem 23922 observações isentas. Como não nos interessa avaliar essas
+# observações, temos que as remover
+# Nota: Apenas 0.7% das observações têm condutores sem cinto ou capacete, um valor
+# mínimo que torna a sua análise muito mais complicada
+# Nota: Ou divide-se as observações de cinto/capacete ou se juntam as capacete/cinto de segurança para a análise e gráficos serem coerentes
+
+print("Before implementing the changes: ")
+table(condutores_combined$Acessórios.Condutores)
+
+condutores_combined <- condutores_combined %>%
+  mutate(Acessórios.Condutores = case_when(
+    Acessórios.Condutores == "Sem uso de cinto/capacete" & 
+    safety_system == "cinto de segurança" ~ "Sem uso de cinto",
+    Acessórios.Condutores == "Sem uso de cinto/capacete" & 
+    safety_system == "capacete" ~ "Sem uso de capacete",
+    Acessórios.Condutores == "Sem uso de cinto/capacete" & 
+    safety_system == "isento" ~ "Isento",
+    TRUE ~ Acessórios.Condutores 
+  ))
+
+print("After implementing the changes: ")
+table(condutores_combined$Acessórios.Condutores)
+
+# Remoção dos valores não definidos por serem uma percentagem minima face ao 
+# número de observações totais
+condutores_combined <- condutores_combined %>%
+  filter(Acessórios.Condutores != "NÃO DEFINIDO")
+```
+
+#### Separar a variável Datahora nas variáveis data e hora
+
+```{r}
+condutores_combined <- condutores_combined %>%
+  separate(Datahora, into = c("data", "hora"), sep = " ") %>%
+   mutate(
+    data = as.Date(data, format = "%Y:%m:%d"), # Converter data para Date
+    hora = format(strptime(hora, "%H:%M:%S"), "%H") # Garantir formato da hora  
+   )
+```
+
+#### Criar a variável numérica "mês" (a partir da data)
+
+```{r}
+
+condutores_combined$mês <- as.numeric(format(as.Date(condutores_combined$data), "%m"))
+
+#unique(condutores_combined$mês) #valores validados
+#sum(is.na(condutores_combined$mês)) #não existem valores omissos na variável
+# boxplot( #Boxplot do mês
+#   condutores_combined$mês,
+#   main = "Distribuição dos meses dos acidentes", 
+#   col = "#5f9ea0",                            
+#   ylab = "mês",                                 
+#   ylim = c(1, 12)                              
+# ) # não existem outliers nesta variável
+
+condutores_combined$mês <- month.abb[condutores_combined$mês] #categorizar a variável mês para melhor interpretatividade
+```
+
+#### Criar a variável numérica "hora" (a partir da data)
+
+```{r}
+condutores_combined$hora <- as.numeric(condutores_combined$hora) #passar hora para formato numérico
+#unique(condutores_combined$hora) #valores validados
+#sum(is.na(condutores_combined$mês)) #não existem valores omissos para a hora
+condutores_combined$hora[condutores_combined$hora == 0] <- 24 #passar o valor 0 para 24 (que corresponde à meia noite)
+# boxplot( #Boxplot da hora
+#   condutores_combined$hora,
+#   main = "Distribuição das horas dos acidentes", 
+#   col = "#d8bfd8",                            
+#   ylab = "hora",                                 
+#   ylim = c(0,24)                              
+# ) #não existem outliers
+
+#all(format(as.Date(passageiros_combined$data), "%Y") %in% 2010:2019)#o ano em data é sempre entre 2010 e 2019
+#sum(is.na(condutores_combined$data)) #não existem valores omissos na data
+```
+
+#### criar a variável periodo dia
+
+```{r}
+condutores_combined <- condutores_combined %>%
+  mutate(
+    periodo_dia = mapply(categorizar_periodo, hora, as.Date(data))
+  )
+```
+
+#### Criar a variável "época"
+
+```{r}
+# Com as categorias:
+
+# natal e ano novo (19 de dezembro a 2 de janeiro)
+# verão (junho, julho e agosto)
+# peregrinação a fatima (12 e 13 de maio)
+# pascoa - a semana de páscoa varia de ano para ano (2019: 18-22 abr; 2018: 26 mar a 1 abr; 2017: 29 mar a 2 abr; 2016: 24-27 mar ; 2015: 2-5 abr ; 2014: 14-20 abr ; 2013: 28-31 mar; 2012: 5-8 abr; 2011: 21-25 abr; 2010: 1-4 abr)
+# carnaval - o carnaval varia de ano para ano (2019: 1-5 mar; 2018: 9-13 fev; 2017: 24-28 fev; 2016: 5-9 fev; 2015: 13-17 fev ; 2014: 28 fev a 4 mar ; 2013: 8-12 fev  ; 2012: 18-22 fev; 2011: 3-8 mar ; 2010: 12-16 fev)
+
+#Função para criar variável época com as categorias prévias
+condutores_combined <- condutores_combined %>%
+  mutate(
+    época = case_when(
+      # Natal e Ano Novo (19 de dezembro a 2 de janeiro)
+      month(data) == 12 & day(data) >= 19 & day(data) <= 31 & year(data) %in% 2010:2019 ~ "natal e ano novo",
+      month(data) == 1 & day(data) <= 2 & year(data) %in% 2010:2019 ~ "natal e ano novo",
+      # Verão (junho, julho e agosto)
+      month(data) %in% c(6, 7, 8) & year(data) %in% 2010:2019 ~ "verão",
+      # Peregrinação a Fátima (12 e 13 de maio)
+      month(data) == 5 & day(data) %in% c(12, 13) & year(data) %in% 2010:2019 ~ "peregrinação fátima",
+      # Páscoa (ano a ano)
+      data >= as.Date("2019-04-18") & data <= as.Date("2019-04-22") ~ "páscoa", 
+      data >= as.Date("2018-03-26") & data <= as.Date("2018-04-01") ~ "páscoa",
+      data >= as.Date("2017-03-29") & data <= as.Date("2017-04-02") ~ "páscoa",
+      data >= as.Date("2016-03-24") & data <= as.Date("2016-03-27") ~ "páscoa",
+      data >= as.Date("2015-04-02") & data <= as.Date("2015-04-05") ~ "páscoa",
+      data >= as.Date("2014-04-14") & data <= as.Date("2014-04-20") ~ "páscoa",
+      data >= as.Date("2013-03-28") & data <= as.Date("2013-03-31") ~ "páscoa",
+      data >= as.Date("2012-04-05") & data <= as.Date("2012-04-08") ~ "páscoa",
+      data >= as.Date("2011-04-21") & data <= as.Date("2011-04-25") ~ "páscoa",
+      # Carnaval (ano a ano)
+      data >= as.Date("2019-03-01") & data <= as.Date("2019-03-05") ~ "carnaval",
+      data >= as.Date("2018-02-09") & data <= as.Date("2018-02-13") ~ "carnaval",
+      data >= as.Date("2017-02-24") & data <= as.Date("2017-02-28") ~ "carnaval",
+      data >= as.Date("2016-02-05") & data <= as.Date("2016-02-09") ~ "carnaval",
+      data >= as.Date("2015-02-13") & data <= as.Date("2015-02-17") ~ "carnaval",
+      data >= as.Date("2014-02-28") & data <= as.Date("2014-03-04") ~ "carnaval",
+      data >= as.Date("2013-02-08") & data <= as.Date("2013-02-12") ~ "carnaval",
+      data >= as.Date("2012-02-18") & data <= as.Date("2012-02-22") ~ "carnaval",
+      data >= as.Date("2011-03-03") & data <= as.Date("2011-03-08") ~ "carnaval",
+      data >= as.Date("2010-02-12") & data <= as.Date("2010-02-16") ~ "carnaval",
+      # Caso não pertença a nenhuma categoria
+      TRUE ~ "normal"
+    )
+  )
+```
+
+#### Criar a variável "dia_da_semana"
+
+```{r}
+condutores_combined <- condutores_combined %>%
+  mutate(
+    data = as.Date(data),  
+    dia_da_semana = weekdays(data)  
+  )
+
+# Verificar primeiras obs
+head(condutores_combined) 
+```
+
+#### Tratamento variáveis Distrito e Conselho
+
+```{r}
+table(condutores_combined$year, condutores_combined$Distrito)
+#Entre 2010 e 2019, na maioria dos distritos, nota-se uma tenência para a diminuição dos condutores registados em acidentes em 2011 até 2012-2014 e depois tente a aumentar novamente e atingir os valores de 2010. Apenas Lisboa e Porto parecem-se destacar por apresentarem um aumento de condutores registados em acidentes mais elevado comparadamente aos restantes distritos.
+
+length(unique(condutores_combined$Distrito)) #18 - Estam representados todos os distritos de portugal continental
+length(unique(condutores_combined$Concelho)) #278
+
+sum(is.na(condutores_combined$Distrito))
+sum(is.na(condutores_combined$Concelho))
+#Não existem NAs em ambas as variáveis
+```
+
+#### Tratamento da variável "Lesões.a.30.dias"
+
+```{r}
+# Únicos para os condutores de 2010 a 2019:
+unique(condutores_combined$Lesões.a.30.dias)
+
+# A variável para os anos de 2010-2019 não está ainda em factor:
+condutores_combined$Lesões.a.30.dias <- as.factor(condutores_combined$Lesões.a.30.dias)
+
+# Tabela de frequências absolutas de condutores com Lesões a 30 dias para 2010-2019:
+tab_frequ_abs_cond_10_19_lesoes <- table(condutores_combined$Lesões.a.30.dias)
+tab_frequ_abs_cond_10_19_lesoes
+
+## Remoção de NAs na variável Lesões a 30 dias para 2010-2019 ("NAO DEFINIDO"):
+condutores_combined$Lesões.a.30.dias[condutores_combined$Lesões.a.30.dias == "NÃO DEFINIDO"] <- NA
+
+# Remoção das linhas com Na's
+condutores_combined <- condutores_combined %>%
+  filter( !(is.na(Lesões.a.30.dias)))
+
+# Voltar a fazer as.factor dessa variável para retirar a label "NAO DEFINIDO" 
+condutores_combined$Lesões.a.30.dias <- droplevels(as.factor(condutores_combined$Lesões.a.30.dias))
+
+condutores_combined$Lesões.a.30.dias <- as.factor(condutores_combined$Lesões.a.30.dias)
+
+#Tabela sem a categoria com Na's
+tab_frequ_abs_cond_10_19_lesoes <- table(condutores_combined$Lesões.a.30.dias)
+tab_frequ_abs_cond_10_19_lesoes
+
+
+# Tabela de frequências relativas de condutores com Lesões a 30 dias para 2010-2019:
+round(prop.table(tab_frequ_abs_cond_10_19_lesoes), 2)
+
+# Nesta variável, relativamente aos condutores de 2023 e de 2010-2019, as proporções do tipo de lesões são iguais.
+```
+
+#### Tratamento da variável "Ano.Matrícula"
+
+```{r}
+#Elementos únicos 
+sort(unique(condutores_combined$Ano.matricula), decreasing=TRUE)
+
+# Vai desde Existem Na's nesta variável. remoção destes também:
+
+# Remoção das linhas com Na's
+condutores_combined <- condutores_combined %>%
+  filter( !(is.na(Ano.matricula)))
+
+#Tabela de frequências absolutas desta variável
+tab_frequ_abs_cond_10_19_ano <- sort(table(condutores_combined$Ano.matricula), decreasing = TRUE)
+tab_frequ_abs_cond_10_19_ano
+
+#Tabela de frequências relativas desta variável
+head(round(prop.table(tab_frequ_abs_cond_10_19_ano), 2))
+```
+
+#### Tratamento da variável "Sexo"
+
+```{r}
+condutores_combined <- condutores_combined[condutores_combined$Sexo != "NÃO IDENTIFICADO", ]
+table(condutores_combined$Sexo)
+```
+
+#### Visualização
+
+```{r}
+# Proporções com agrupamento por faxa etária e ano para facilitar o plot
+condutores_proportions <- condutores_combined %>%
+  group_by(year, `Acessórios.Condutores`, Grupo.Etário) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(year, `Acessórios.Condutores`) %>%  # Group by year and seatbelt usage
+  mutate(proportion = count / sum(count))
+
+
+# Plot da distribuição proporcional das faxas etárias de acordo com o seu uso de dispositivos de segurança, para cada ano entre 2010-2019
+ggplot(condutores_proportions, aes(x = Grupo.Etário, y = proportion, fill = Grupo.Etário)) +
+  geom_bar(stat = "identity") +
+  facet_grid(year ~ `Acessórios.Condutores`, scales = "free_y") +
+  labs(
+    title = "Proportional Distribution of Age Groups by Seatbelt Usage and Year",
+    x = "Age Group",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+
+# proporções percentuais com agrupamento por faxa etária para facilitar o plot
+  condutores_summary <- condutores_combined %>%
+  group_by(`Acessórios.Condutores`, Grupo.Etário) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(`Acessórios.Condutores`) %>%  # Group by seatbelt status
+  mutate(percentage = count / sum(count) * 100)
+
+    
+# Plot da distribuição proporcional das faxas etárias de acordo com o seu uso de dispositivos de segurança
+ggplot(condutores_summary, aes(x = `Acessórios.Condutores`, y = count, fill = Grupo.Etário)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = paste0(round(percentage, 1), "%")), 
+    position = position_fill(vjust = 0.5), 
+    size = 3
+  ) +
+  labs(
+    title = "Proportion of Age Groups by Seatbelt Status",
+    x = "Seatbelt Status",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  theme_minimal()
+
+
+# Nº de acidentes por período do dia 
+contagens_periodo_dia <- table(condutores_combined$periodo_dia)
+contagens_periodo_dia_df <- as.data.frame(contagens_periodo_dia)
+colnames(contagens_periodo_dia_df) <- c("Período do Dia", "Nº Acidentes")
+contagens_periodo_dia_df
+
+
+# Nº de acidentes por mês
+contagens_mes <- table(condutores_combined$mês)
+contagens_mes_df <- as.data.frame(contagens_mes)
+colnames(contagens_mes_df) <- c("Mês", "Nº Acidentes")
+contagens_mes_df
+
+
+# Nº de acidentes por época
+contagens_epoca <- table(condutores_combined$época)
+contagens_epoca_df <- as.data.frame(contagens_epoca)
+colnames(contagens_epoca_df) <- c("Época", "Nº Acidentes")
+contagens_epoca_df
+
+
+# Nº de acidentes por dia da semana
+contagens_dia_semana <- table(condutores_combined$dia_da_semana)
+contagens_dia_semana_df <- as.data.frame(contagens_dia_semana)
+colnames(contagens_dia_semana_df) <- c("Dia da Semana", "Nº Acidentes")
+contagens_dia_semana_df
+
+```
+
+### Passageiros 2023
+
+#### Criação da variável 'Grupo.Etário'
+
+```{r}
+passageiros_23 <- passageiros_23 %>%
+  mutate(Grupo.Etário = case_when(
+    as.logical(`Passageiro.Gr.Etario(<=5).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(6-9).SUM`) ~ "child",
+    as.logical(`Passageiro.Gr.Etario(10-14).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(15-17).SUM`) ~ "teenager",
+    as.logical(`Passageiro.Gr.Etario(18-20).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(21-24).SUM`) ~ "young_adult",
+    as.logical(`Passageiro.Gr.Etario(25-29).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(30-34).SUM`) ~ "adult",
+    as.logical(`Passageiro.Gr.Etario(35-39).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(40-44).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(45-49).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(50-54).SUM`) ~ "experienced_adult",
+    as.logical(`Passageiro.Gr.Etario(55-59).SUM`) |
+    as.logical(`Passageiro.Gr.Etario(60-64).SUM`) ~ "older_adult",
+    as.logical(`Passageiro.Gr.Etario(65-69).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(70-74).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(>=75).SUM`) ~ "senior",
+    as.logical(`Passageiro.Gr.Etario(Não.Def.).SUM`) ~ NA,
+    TRUE ~ NA
+    
+  ))
+
+# passageiros_23$`Grupo.Etário` <- with(passageiros_23, case_when(
+#   `Passageiro.Gr.Etario(<=5).SUM` == 1 | `Passageiro.Gr.Etario(6-9).SUM` == 1 ~ "Criança",
+#   `Passageiro.Gr.Etario(10-14).SUM` == 1 ~ "Criança",
+#   `Passageiro.Gr.Etario(15-17).SUM` == 1 ~ "Adolescente",
+#   `Passageiro.Gr.Etario(18-20).SUM` == 1 | `Passageiro.Gr.Etario(21-24).SUM` == 1 ~ "Jovem",
+#   `Passageiro.Gr.Etario(25-29).SUM` == 1 | 
+#   `Passageiro.Gr.Etario(30-34).SUM` == 1 | `Passageiro.Gr.Etario(35-39).SUM` == 1 | 
+#   `Passageiro.Gr.Etario(40-44).SUM` == 1 | `Passageiro.Gr.Etario(45-49).SUM` == 1 | 
+#   `Passageiro.Gr.Etario(50-54).SUM` == 1 | `Passageiro.Gr.Etario(55-59).SUM` == 1 ~ "Adulto",
+#   `Passageiro.Gr.Etario(60-64).SUM` == 1 | `Passageiro.Gr.Etario(65-69).SUM` == 1 ~ "Senior",
+#   `Passageiro.Gr.Etario(>=75).SUM` == 1 | `Passageiro.Gr.Etario(>=75).SUM` == 1 ~ "Idoso",
+#   `Passageiro.Gr.Etario(Não.Def.).SUM` == 1 ~ NA_character_,
+#   TRUE ~ NA_character_ # Caso nenhuma condição seja atendida
+# ))
+
+#Verificar a distribuição dos grupos etários
+table(passageiros_23$`Grupo.Etário`, useNA = "ifany")
+
+#Passar os valores não definidos para NA
+passageiros_23$`Acessórios.Passageiro`[passageiros_23$`Acessórios.Passageiro` == "NÃO DEFINIDO"] <- NA
+
+#Remoção de NAs 
+sum(is.na(passageiros_23$`Grupo.Etário`))
+
+passageiros_23 <- passageiros_23 %>%
+  filter( !(is.na(Grupo.Etário)))
+```
+
+#### Tratamento de Valores Omissos para o grupo etário, tipo de lesão e dispositivos de segurança
+
+```{r}
+# Valores omissos
+
+#grupo etário:
+sum(is.na(passageiros_23$'Grupo.Etário')) #existem 402 NA's para o grupo etário
+
+#Observar linhas onde 'Grupo.Etário' é NA
+linhas_na_g <- passageiros_23 %>%
+  filter(is.na(`Grupo.Etário`))
+head(linhas_na_g,15)
+
+# Remover observações onde grupo etário e dispositivos de segurança são ambos NA
+passageiros_23 <- passageiros_23 %>%
+  filter(!(is.na(`Grupo.Etário`) & is.na(`Acessórios.Passageiro`)))
+
+sum(is.na(passageiros_23$'Grupo.Etário')) #há agora 401 valores omissos no grupo etário
+
+#tipo de lesão:
+sum(is.na(passageiros_23$'Lesões.a.30.dias')) #não existem NA's para o tipo de lesão
+
+#dispositivos de segurança
+sum(is.na(passageiros_23$'Acessórios.Passageiro')) #existem 25 NA's nos dispositivos de segurança
+
+# Remoção dos valores não definidos por serem uma percentagem minima face ao 
+# número de observações totais
+passageiros_23 <- passageiros_23 %>%
+  filter(!(is.na(Acessórios.Passageiro)))
+```
+
+#### Criação da variável "mês"
+
+```{r}
+# Adicionar mês aos passageiros
+passageiros_23 <- merge(passageiros_23, 
+                    acidentes_23[, c("Id..Acidente", "mês")], 
+                    by = "Id..Acidente", 
+                    all.x = TRUE)  # Mantendo todas as observações de passageiros
+
+#head(passageiros_23)
+```
+
+#### Criação da variável "periodo_dia"
+
+```{r}
+# Adicionar periodo_dia aos passageiros
+passageiros_23 <- merge(passageiros_23, 
+                    acidentes_23[, c("Id..Acidente", "periodo_dia")], 
+                    by = "Id..Acidente", 
+                    all.x = TRUE)  # Mantendo todas as observações de passageiros
+```
+
+#### Criação da variável "época"
+
+```{r}
+# Adicionar época aos passageiros
+passageiros_23 <- merge(passageiros_23, 
+                    acidentes_23[, c("Id..Acidente", "época")], 
+                    by = "Id..Acidente", 
+                    all.x = TRUE)  # Mantendo todas as observações de passageiros
+```
+
+#### Criação da variável "dia_da_semana"
+
+```{r}
+# Adicionar dia da semana aos passageiros
+passageiros_23 <- merge(passageiros_23, 
+                    acidentes_23[, c("Id..Acidente", "dia_da_semana")], 
+                    by = "Id..Acidente", 
+                    all.x = TRUE)  # Mantendo todas as observações de passageiros
+
+#head(passageiros_23)
+```
+
+#### Tratamento da variável "Lesões.a.30.dias"
+
+```{r}
+# Únicos para para os passageiros de 2010 a 2019:
+unique(passageiros_23$Lesões.a.30.dias)
+
+
+# Tabela de frequências absolutas de  Lesões a 30 dias para 2023:
+tab_frequ_abs_pass_23_lesoes <- table(passageiros_23$Lesões.a.30.dias)
+tab_frequ_abs_pass_23_lesoes
+  
+# Tabela de frequências relativas de  Lesões a 30 dias para 2023:
+round(prop.table(tab_frequ_abs_pass_23_lesoes), 2)
+
+```
+
+#### Visualização
+
+```{r}
+# Nº de acidentes por período do dia 
+contagens_periodo_dia <- table(passageiros_23$periodo_dia)
+contagens_periodo_dia_df <- as.data.frame(contagens_periodo_dia)
+colnames(contagens_periodo_dia_df) <- c("Período do Dia", "Nº Acidentes")
+contagens_periodo_dia_df
+
+# Nº de acidentes por mês
+contagens_mes <- table(passageiros_23$mês)
+contagens_mes_df <- as.data.frame(contagens_mes)
+colnames(contagens_mes_df) <- c("Mês", "Nº Acidentes")
+contagens_mes_df
+
+# Nº de acidentes por época
+contagens_epoca <- table(passageiros_23$época)
+contagens_epoca_df <- as.data.frame(contagens_epoca)
+colnames(contagens_epoca_df) <- c("Época", "Nº Acidentes")
+contagens_epoca_df
+
+# Nº de acidentes por dia da semana
+contagens_dia_semana <- table(passageiros_23$dia_da_semana)
+contagens_dia_semana_df <- as.data.frame(contagens_dia_semana)
+colnames(contagens_dia_semana_df) <- c("Dia da Semana", "Nº Acidentes")
+contagens_dia_semana_df
+```
+
+### Passageiros 2010-2019
+
+#### Criação da variável 'Grupo.Etário'
+
+```{r}
+passageiros_combined <- passageiros_combined %>%
+  mutate(Grupo.Etário = case_when(
+    as.logical(`Passageiro.Gr.Etario(<=5).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(6-9).SUM`) ~ "child",
+    as.logical(`Passageiro.Gr.Etario(10-14).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(15-17).SUM`) ~ "teenager",
+    as.logical(`Passageiro.Gr.Etario(18-20).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(21-24).SUM`) ~ "young_adult",
+    as.logical(`Passageiro.Gr.Etario(25-29).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(30-34).SUM`) ~ "adult",
+    as.logical(`Passageiro.Gr.Etario(35-39).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(40-44).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(45-49).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(50-54).SUM`) ~ "experienced_adult",
+    as.logical(`Passageiro.Gr.Etario(55-59).SUM`) |
+    as.logical(`Passageiro.Gr.Etario(60-64).SUM`) ~ "older_adult",
+    as.logical(`Passageiro.Gr.Etario(65-69).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(70-74).SUM`) | 
+      as.logical(`Passageiro.Gr.Etario(>=75).SUM`) ~ "senior",
+    as.logical(`Passageiro.Gr.Etario(Não.Def.).SUM`) ~ NA,
+    TRUE ~ NA
+    
+  ))
+
+table(passageiros_combined$Grupo.Etário)
+# Após feita uma análise, não existe nenhuma observação em que todas estas
+# categorias são 0, o que não só é um ponto positivo na análise desta variável dos 
+# passageiros pois todas as categorias já se encontram representadas, como 
+# reinforça a ideia de que, na base de dados condutores_combined, a categoria em
+# falta é representada pela ausência de todas as outras
+
+sum(is.na(passageiros_combined$Grupo.Etário))
+length(passageiros_combined$Grupo.Etário)
+# Existem 265 observações de 105683 que são NAs. Isto equivale a 0.25% das observações. Como são poucas observações, tal como no data.frame de condutores,
+# é seguro ponderar a hipotese de remove-las
+
+#Remoção de NAs 
+sum(is.na(passageiros_combined$`Grupo.Etário`))
+
+passageiros_combined <- passageiros_combined %>%
+  filter( !(is.na(Grupo.Etário)))
+```
+
+#### Tratamento da variável "Sexo"
+
+```{r}
+passageiros_combined <- passageiros_combined[passageiros_combined$Sexo != "NÃO DEFINIDO", ]
+table(passageiros_combined$Sexo)
+```
+
+#### Tratamento da variável 'Acessórios.Passageiro'
+
+```{r}
+unique(passageiros_combined$Acessórios.Passageiro)
+table(passageiros_combined$Acessórios.Passageiro)
+length(passageiros_combined$Acessórios.Passageiro)
+# Existem 1580 observações de 105683 que não estão definidas, cerca de 1.5% 
+# das observações totais, deve-se ponderar sobre a remoção das mesmas para 
+# facilitar a analise
+
+# Remoção dos valores não definidos por serem uma percentagem minima face ao 
+# número de observações totais
+passageiros_combined <- passageiros_combined %>%
+  filter(Acessórios.Passageiro != "NÃO DEFINIDO")
+```
+
+#### Separar a variável Datahora nas variáveis data e hora
+
+```{r}
+passageiros_combined <- passageiros_combined %>%
+  separate(Datahora, into = c("data", "hora"), sep = " ") %>%
+   mutate(
+    data = as.Date(data, format = "%Y:%m:%d"), # Converter data para Date
+    hora = format(strptime(hora, "%H:%M:%S"), "%H") # Garantir formato da hora  
+   )
+```
+
+#### Criar a variável numérica "mês" (a partir da data)
+
+```{r}
+passageiros_combined$mês <- as.numeric(format(as.Date(passageiros_combined$data), "%m"))
+
+#unique(passageiros_combined$mês) #valores validados
+#sum(is.na(passageiros_combined$mês)) #não existem valores omissos na variável
+# boxplot( #Boxplot do mês
+#   passageiros_combined$mês,
+#   main = "Distribuição dos meses dos acidentes", 
+#   col = "#5f9ea0",                            
+#   ylab = "mês",                                 
+#   ylim = c(1, 12)                              
+#   ) # não existem outliers nesta variável
+
+passageiros_combined$mês <- month.abb[passageiros_combined$mês] #categorizar a variável mês para melhor interpretatividade
+
+acidentes_23 <- subset(acidentes_23, select=-Mês)
+```
+
+#### Criar a variável numérica "hora" (a partir da data)
+
+```{r}
+passageiros_combined$hora <- as.numeric(passageiros_combined$hora) #passar hora para formato numérico
+#unique(passageiros_combined$hora) #valores validados
+#sum(is.na(passageiros_combined$mês)) #não existem valores omissos para a hora
+# boxplot( #Boxplot da hora
+#   passageiros_combined$hora,
+#   main = "Distribuição das horas dos acidentes", 
+#   col = "#d8bfd8",                            
+#   ylab = "hora",                                 
+#   ylim = c(0,24)                              
+#   ) #não existem outliers
+
+#all(format(as.Date(passageiros_combined$data), "%Y") %in% 2010:2019)#o ano em data é sempre entre 2010 e 2019
+#sum(is.na(passageiros_combined$data)) #não existem valores omissos na data
+```
+
+#### Criar a variável "periodo_dia"
+
+```{r}
+passageiros_combined <- passageiros_combined %>%
+  mutate(
+    periodo_dia = mapply(categorizar_periodo, hora, as.Date(data))
+  )
+```
+
+#### Criar a variável "época"
+
+```{r}
+# Com as categorias:
+
+# natal e ano novo (19 de dezembro a 2 de janeiro)
+# verão (junho, julho e agosto)
+# peregrinação a fatima (12 e 13 de maio)
+# pascoa - a semana de páscoa varia de ano para ano (2019: 18-22 abr; 2018: 26 mar a 1 abr; 2017: 29 mar a 2 abr; 2016: 24-27 mar ; 2015: 2-5 abr ; 2014: 14-20 abr ; 2013: 28-31 mar; 2012: 5-8 abr; 2011: 21-25 abr; 2010: 1-4 abr)
+# carnaval - o carnaval varia de ano para ano (2019: 1-5 mar; 2018: 9-13 fev; 2017: 24-28 fev; 2016: 5-9 fev; 2015: 13-17 fev ; 2014: 28 fev a 4 mar ; 2013: 8-12 fev  ; 2012: 18-22 fev; 2011: 3-8 mar ; 2010: 12-16 fev)
+
+#Função para criar variável época com as categorias prévias
+passageiros_combined <- passageiros_combined %>%
+  mutate(
+    época = case_when(
+      # Natal e Ano Novo (19 de dezembro a 2 de janeiro)
+      month(data) == 12 & day(data) >= 19 & day(data) <= 31 & year(data) %in% 2010:2019 ~ "natal e ano novo",
+      month(data) == 1 & day(data) <= 2 & year(data) %in% 2010:2019 ~ "natal e ano novo",
+      # Verão (junho, julho e agosto)
+      month(data) %in% c(6, 7, 8) & year(data) %in% 2010:2019 ~ "verão",
+      # Peregrinação a Fátima (12 e 13 de maio)
+      data >= as.Date("2023-05-12") & data <= as.Date("2023-05-13") ~ "peregrinação fátima",
+      # Páscoa (ano a ano)
+      data >= as.Date("2019-04-18") & data <= as.Date("2019-04-22") ~ "páscoa", 
+      data >= as.Date("2018-03-26") & data <= as.Date("2018-04-01") ~ "páscoa",
+      data >= as.Date("2017-03-29") & data <= as.Date("2017-04-02") ~ "páscoa",
+      data >= as.Date("2016-03-24") & data <= as.Date("2016-03-27") ~ "páscoa",
+      data >= as.Date("2015-04-02") & data <= as.Date("2015-04-05") ~ "páscoa",
+      data >= as.Date("2014-04-14") & data <= as.Date("2014-04-20") ~ "páscoa",
+      data >= as.Date("2013-03-28") & data <= as.Date("2013-03-31") ~ "páscoa",
+      data >= as.Date("2012-04-05") & data <= as.Date("2012-04-08") ~ "páscoa",
+      data >= as.Date("2011-04-21") & data <= as.Date("2011-04-25") ~ "páscoa",
+      # Carnaval (ano a ano)
+      data >= as.Date("2019-03-01") & data <= as.Date("2019-03-05") ~ "carnaval",
+      data >= as.Date("2018-02-09") & data <= as.Date("2018-02-13") ~ "carnaval",
+      data >= as.Date("2017-02-24") & data <= as.Date("2017-02-28") ~ "carnaval",
+      data >= as.Date("2016-02-05") & data <= as.Date("2016-02-09") ~ "carnaval",
+      data >= as.Date("2015-02-13") & data <= as.Date("2015-02-17") ~ "carnaval",
+      data >= as.Date("2014-02-28") & data <= as.Date("2014-03-04") ~ "carnaval",
+      data >= as.Date("2013-02-08") & data <= as.Date("2013-02-12") ~ "carnaval",
+      data >= as.Date("2012-02-18") & data <= as.Date("2012-02-22") ~ "carnaval",
+      data >= as.Date("2011-03-03") & data <= as.Date("2011-03-08") ~ "carnaval",
+      data >= as.Date("2010-02-12") & data <= as.Date("2010-02-16") ~ "carnaval",
+      # Caso não pertença a nenhuma categoria
+      TRUE ~ "normal"
+    )
+  )
+
+```
+
+#### Criar a variável dia da semana
+
+```{r}
+passageiros_combined <- passageiros_combined %>%
+  mutate(
+    data = as.Date(data),  
+    dia_da_semana = weekdays(data)  
+  )
+
+# Verificar primeiras obs
+head(passageiros_combined) 
+```
+
+#### Tratamento das variáveis "Distritos" e "Conselhos"
+
+```{r}
+table(passageiros_combined$year, passageiros_combined$Distrito)
+# No geral todos os distritos apresentam mais passageiros registados em acidentes no ano 2010
+
+length(unique(passageiros_combined$Distrito)) # 18 - Estam representados todos os distritos de portugal continental
+length(unique(passageiros_combined$Concelho)) # 279
+
+sum(is.na(passageiros_combined$Distrito))
+sum(is.na(passageiros_combined$Concelho))
+#Não existem NAs em ambas as variáveis
+```
+
+#### Tratamento da variável "Lesões.a.30.dias"
+
+```{r}
+# Únicos para os passageiros de 2010 a 2019:
+unique(passageiros_combined$Lesões.a.30.dias)
+
+# A variável para os anos de 2010-2019 não está ainda em factor:
+passageiros_combined$Lesões.a.30.dias <- as.factor(passageiros_combined$Lesões.a.30.dias)
+
+# Tabela de frequências absolutas de  Lesões a 30 dias para 2010-2019:
+tab_frequ_abs_pass_10_19_lesoes <- table(passageiros_combined$Lesões.a.30.dias)
+tab_frequ_abs_pass_10_19_lesoes
+
+# Tabela de frequências relativas de  Lesões a 30 dias para 2010-2019:
+round(prop.table(tab_frequ_abs_pass_10_19_lesoes), 2)
+
+# Tal como nos condutores, nesta variável relativamente aos passageiros, de 2023 e de 2010-2019 as proporções do tipo de lesões são iguais
+```
+
+#### Visualizações
+
+```{r}
+# Proporções com agrupamento por faxa etária e ano para facilitar o plot
+passageiros_proportions <- passageiros_combined %>%
+  group_by(year, `Acessórios.Passageiro`, Grupo.Etário) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(year, `Acessórios.Passageiro`) %>%  # Group by year and seatbelt usage
+  mutate(proportion = count / sum(count))
+
+
+# Plot da distribuição proporcional das faxas etárias de acordo com o seu uso de dispositivos de segurança, para cada ano entre 2010-2019
+ggplot(passageiros_proportions, aes(x = Grupo.Etário, y = proportion, fill = Grupo.Etário)) +
+  geom_bar(stat = "identity") +
+  facet_grid(year ~ `Acessórios.Passageiro`, scales = "free_y") +
+  labs(
+    title = "Proportional Distribution of Age Groups by Seatbelt Usage and Year",
+    x = "Age Group",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+
+# proporções percentuais com agrupamento por faxa etária para facilitar o plot
+passengers_summary <- passageiros_combined %>%
+  group_by(`Acessórios.Passageiro`, Grupo.Etário) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(`Acessórios.Passageiro`) %>% 
+  mutate(percentage = count / sum(count) * 100)
+
+
+# Plot da distribuição proporcional das faxas etárias de acordo com o seu uso de dispositivos de segurança
+ggplot(passengers_summary, aes(x = `Acessórios.Passageiro`, y = count, fill = Grupo.Etário)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = paste0(round(percentage, 1), "%")), 
+    position = position_fill(vjust = 0.5),
+    size = 3
+  ) +
+  labs(
+    title = "Proportion of Age Groups by Seatbelt Status",
+    x = "Seatbelt Status",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  theme_minimal()
+
+
+# Nº de acidentes por período do dia 
+contagens_periodo_dia <- table(passageiros_combined$periodo_dia)
+contagens_periodo_dia_df <- as.data.frame(contagens_periodo_dia)
+colnames(contagens_periodo_dia_df) <- c("Período do Dia", "Nº Acidentes")
+contagens_periodo_dia_df
+
+
+# Nº de acidentes por mês
+contagens_mes <- table(passageiros_combined$mês)
+contagens_mes_df <- as.data.frame(contagens_mes)
+colnames(contagens_mes_df) <- c("Mês", "Nº Acidentes")
+contagens_mes_df
+
+
+# Nº de acidentes por época
+contagens_epoca <- table(passageiros_combined$época)
+contagens_epoca_df <- as.data.frame(contagens_epoca)
+colnames(contagens_epoca_df) <- c("Época", "Nº Acidentes")
+contagens_epoca_df
+
+
+# Nº de acidentes por dia da semana
+contagens_dia_semana <- table(passageiros_combined$dia_da_semana)
+contagens_dia_semana_df <- as.data.frame(contagens_dia_semana)
+colnames(contagens_dia_semana_df) <- c("Dia da Semana", "Nº Acidentes")
+contagens_dia_semana_df
+
+```
+
+### Remoção de variáveis que não vão ser usadas
+
+#### Passageiros
+
+```{r}
+# 2010-2019
+
+# Criação de um novo dataframe, removendo as variáveis que não são de interesse
+passag_comb_clean <- data.frame(
+  Id..Acidente = passageiros_combined$Id..Acidente,
+  data = passageiros_combined$data,
+  hora = passageiros_combined$hora,
+  Id..Passageiro = passageiros_combined$Id..Passageiro,
+  Lesões.a.30.dias = passageiros_combined$Lesões.a.30.dias,
+  Sexo = passageiros_combined$Sexo,
+  Acessórios.Passageiro = passageiros_combined$Acessórios.Passageiro,
+  Distrito = passageiros_combined$Distrito,
+  Concelho = passageiros_combined$Concelho,
+  year = passageiros_combined$year,
+  Grupo.Etário = passageiros_combined$Grupo.Etário,
+  mês = passageiros_combined$mês,
+  periodo_dia = passageiros_combined$periodo_dia,
+  época = passageiros_combined$época,
+  dia_da_semana = passageiros_combined$dia_da_semana
+)
+
+# 2023
+
+passag_23_clean <- data.frame(
+  Id..Acidente = passageiros_23$Id..Acidente,
+  Id..Passageiro = passageiros_23$Id..Passageiro,
+  Lesões.a.30.dias = passageiros_23$Lesões.a.30.dias,
+  Sexo = passageiros_23$Sexo,
+  Acessórios.Passageiro = passageiros_23$Acessórios.Passageiro,
+  Grupo.Etário = passageiros_23$Grupo.Etário,
+  mês = passageiros_23$mês,
+  periodo_dia = passageiros_23$periodo_dia,
+  época = passageiros_23$época,
+  dia_da_semana = passageiros_23$dia_da_semana
+)
+
+```
+
+#### Condutores
+
+```{r}
+# 2010-2019
+
+# Creating a new dataframe with all columns from df
+condut_comb_clean <- data.frame(
+  Id..Acidente = condutores_combined$Id..Acidente,
+  data = condutores_combined$data,
+  hora = condutores_combined$hora,
+  Sexo = condutores_combined$Sexo,
+  Lesões.a.30.dias = condutores_combined$Lesões.a.30.dias,
+  Acessórios.Condutores = condutores_combined$Acessórios.Condutores,
+  Categoria.Veículos = condutores_combined$Categoria.Veículos,
+  Ano.matricula = condutores_combined$Ano.matricula,
+  Distrito = condutores_combined$Distrito,
+  Concelho = condutores_combined$Concelho,
+  year = condutores_combined$year,
+  Grupo.Etário = condutores_combined$Grupo.Etário,
+  safety_system = condutores_combined$safety_system,
+  mês = condutores_combined$mês,
+  periodo_dia = condutores_combined$periodo_dia,
+  época = condutores_combined$época,
+  dia_da_semana = condutores_combined$dia_da_semana
+)
+
+# 2023
+
+condut_23_clean <- data.frame(
+  Id..Acidente = condutores_23$Id..Acidente,
+  Sexo = condutores_23$Sexo,
+  Lesões.a.30.dias = condutores_23$Lesões.a.30.dias,
+  Acessórios.Condutores = condutores_23$Acessórios.Condutores,
+  Categoria.Veículos = condutores_23$Categoria.Veículos,
+  Ano.matricula = condutores_23$Ano.matricula,
+  Grupo.Etário = condutores_23$Grupo.Etário,
+  safety_system = condutores_23$safety_system,
+  mês = condutores_23$mês,
+  periodo_dia = condutores_23$periodo_dia,
+  época = condutores_23$época,
+  dia_da_semana = condutores_23$dia_da_semana
+)
+```
+
+## Vizualização de dados
+
+```{r}
+# Ver os Distritos (e ilhas):
+unique(acidentes_23$Distrito)
+
+# Contagem do número de condutores envolvidos em 1 acidente
+head(sort(table(condut_23_clean$Id..Acidente), decreasing = TRUE))
+
+# Contagem do número de passageiros envolvidos em 1 acidente
+head(sort(table(passag_23_clean$Id..Acidente), decreasing = TRUE))
+
+
+# Tabela de frequências absolutas do nº de dispositivos de segurança conductors
+tabela_cond_seg <- table(condut_23_clean$Acessórios.Condutores)
+
+tabela_cond_seg
+
+# Retirar observações onde os dispositivos de segurança são isentos (se não é possível prevenir, não está no nosso objetivo de estudo)
+
+
+# Tabela de frequências relativas do nº de dispositivos de segurança condutores
+
+tabela_cond_seg_rel <- round(prop.table(tabela_cond_seg)* 100, 2)
+
+tabela_cond_seg_rel
+
+
+# Tabela de frequências absolutas do nº de dispositivos de segurança PASSAGEIROS
+tabela_pass_seg <- table(passag_23_clean$Acessórios.Passageiro)
+
+tabela_pass_seg
+
+# Tabela de frequências relativas do nº de dispositivos de segurança condutores
+
+tabela_pass_seg_rel <- round(prop.table(tabela_pass_seg)* 100, 2)
+
+tabela_pass_seg_rel
+
+
+# Criação da tabela dos passageiros e conutores infratores
+
+# Passageiros infratores:
+Passageiros_infratores <- subset(passag_23_clean, ((passag_23_clean$Acessórios.Passageiro == "S/ uso capacete/cinto segurança") | (passag_23_clean$Acessórios.Passageiro == "S/ sistema retenção de crianças")))
+
+nrow(Passageiros_infratores)
+
+
+# Condutores infratores:
+Condutores_infratores <- subset(condut_23_clean, condut_23_clean$Acessórios.Condutores == "Sem uso de cinto/capacete")
+
+nrow(Condutores_infratores)
+```
+
+### Visualização com tabelas SQL
+
+```{r}
+# setup SQL database in memory (foram adicionadas 2 bibliotecas acima)
+con <- dbConnect(RSQLite::SQLite(), ":memory:")
+
+# Passar as bases de dados para SQL (mais fácil a junção das tabelas...)
+dbWriteTable(con, "acidentes", acidentes_23)
+dbWriteTable(con, "condutores", condut_23_clean)
+dbWriteTable(con, "passageiros", passag_23_clean)
+dbWriteTable(con, "condutores_10_19", condut_comb_clean)
+dbWriteTable(con, "acidentes_10_19", acidentes_combined)
+
+# Contagem do número de condutores INFRATORES  que NÃO usaram os dispositivos de segurança POR ACIDENTE 
+n_cond_inf <- dbGetQuery(con, 
+"SELECT a.`Id..Acidente`, COUNT(c.`Id..Acidente`) AS N_Condutores
+FROM acidentes a
+JOIN condutores c
+ON a.`Id..Acidente` = c.`Id..Acidente`
+GROUP BY a.`Id..Acidente`;")
+
+n_cond_inf
+
+# Contagem do número de condutores INFRATORES  que NÃO usaram os dispositivos de segurança POR Distrito
+n_cond_dis <- dbGetQuery(con, 
+"SELECT  a.`Distrito`, COUNT(c.`Id..Acidente`) AS N_Condutores 
+FROM acidentes a 
+JOIN condutores c 
+ON a.`Id..Acidente` = c.`Id..Acidente` 
+GROUP BY  a.`Distrito` ORDER BY N_Condutores DESC;")
+n_cond_dis
+
+
+# Contagem do número de condutores INFRATORES  que NÃO usaram os dispositivos de segurança POR grupo etário (estudar melhor)
+n_cond_gr_e <- dbGetQuery(con, 
+"SELECT  c.`Grupo.Etário`, COUNT(c.`Id..Acidente`) AS N_Condutores
+FROM acidentes a 
+JOIN condutores c 
+ON a.`Id..Acidente` = c.`Id..Acidente` 
+GROUP BY  c.`Grupo.Etário` ORDER BY N_Condutores DESC;")
+n_cond_gr_e
+
+
+# Total de condutores por acidente
+teste_serio_total_condutores_acidente <- dbGetQuery(con, 
+"SELECT a.`Id..Acidente`, COUNT(c.`Id..Acidente`) AS num_condutores
+FROM acidentes a 
+JOIN condutores c 
+ON a.`Id..Acidente` = c.`Id..Acidente` 
+GROUP BY a.`Id..Acidente`, a.`Distrito` ORDER BY num_condutores DESC;")
+teste_serio_total_condutores_acidente
+
+
+# Fazer o total de codutores por acidente e tudo o resto para os passageiros..
+# Análise para os grupos etários melhor
+
+```
+
+## Objetivos a explorar
+
+### Evolução entre a utilização do dispositivo de segurança e a faixa ao longo do tempo
+
+```{r}
+table(condut_comb_clean$year)
+table(passag_comb_clean$year)
+nrow(condut_23_clean)
+nrow(passag_23_clean)
+```
+
+#### Condutores
+
+```{r}
+# 2010-2019
+table(condut_comb_clean$year, condut_comb_clean$Acessórios.Condutores, condut_comb_clean$Grupo.Etário)
+#Não posso aceitar os resultados destas tabelas porque existem diferentes volumes de dados para cada ano
+
+tabela_frequencias1 <- condut_comb_clean %>%
+  group_by(year, Grupo.Etário, Acessórios.Condutores) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(year, Grupo.Etário) %>%
+  mutate(
+    Total_Ano = sum(Count),  # Total de ocorrências por ano e grupo etário
+    Frequencia_Relativa = (Count / Total_Ano) * 100  # Frequência relativa (percentagem)
+  ) %>%
+  select(year, Grupo.Etário, Count, Acessórios.Condutores, Frequencia_Relativa)  # Selecionar as colunas desejadas
+
+tabela_frequencias1
+
+
+# 2023
+tabela_frequencias2 <- condut_23_clean %>%
+  group_by(Grupo.Etário, Acessórios.Condutores) %>%
+  summarise(
+    Count = n(),  # Contagem absoluta
+    .groups = "drop"
+  ) %>%
+  group_by(Grupo.Etário) %>%
+  mutate(
+    Total_Grupo = sum(Count),  # Total de ocorrências por grupo etário
+    Frequencia_Relativa = (Count / Total_Grupo) * 100  # Frequência relativa (percentagem)
+  ) %>%
+  select(Grupo.Etário, Acessórios.Condutores, Count, Frequencia_Relativa)  # Selecionar as colunas desejadas
+
+tabela_frequencias2
+```
+
+##### Visualizações
+
+```{r}
+# Juntar as duas tabelas de frequências para a visualização de todos os anos analisados
+
+tabela_frequencias2 <- tabela_frequencias2 %>%
+  mutate(year = 2023) %>% # Adicionar a coluna year
+  select(year, Grupo.Etário, Count, Acessórios.Condutores, Frequencia_Relativa) # Reordenar as colunas
+
+tabela_frequencias_combinada1 <- bind_rows(tabela_frequencias1, tabela_frequencias2)
+
+#Plot
+ggplot(tabela_frequencias_combinada1, aes(x = year, y = Frequencia_Relativa, color = Grupo.Etário, group = interaction(Grupo.Etário, Acessórios.Condutores))) +
+  geom_line() + # Linhas conectando os pontos
+  geom_point() + # Pontos para destacar os valores
+  facet_wrap(~ Acessórios.Condutores, scales = "free_y") + # Dividir por uso de acessórios (eixos independentes)
+  labs(
+    title = "Evolução da Frequência Relativa de Condutores por Grupo Etário",
+    x = "Ano",
+    y = "Frequência Relativa (%)",
+    color = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom", # Legenda na parte inferior
+    panel.grid.major = element_line(color = "grey80") # Melhorar visualização da grade
+  )
+
+```
+
+#### Passageiros
+
+```{r}
+# 2010-2019
+table(passag_comb_clean$year, passag_comb_clean$Acessórios.Passageiro, passag_comb_clean$Grupo.Etário)
+#Não posso aceitar os resultados destas tabelas porque existem diferentes volumes de dados para cada ano
+
+tabela_frequencias3 <- passag_comb_clean %>%
+  group_by(year, Grupo.Etário, Acessórios.Passageiro) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(year, Grupo.Etário) %>%
+  mutate(
+    Total_Ano = sum(Count),  # Total de ocorrências por ano e grupo etário
+    Frequencia_Relativa = (Count / Total_Ano) * 100  # Frequência relativa (percentagem)
+  ) %>%
+  select(year, Grupo.Etário, Count, Acessórios.Passageiro, Frequencia_Relativa)  # Selecionar as colunas desejadas
+
+tabela_frequencias3
+
+
+# 2023
+tabela_frequencias4 <- passag_23_clean %>%
+  group_by(Grupo.Etário, Acessórios.Passageiro) %>%
+  summarise(
+    Count = n(),  # Contagem absoluta
+    .groups = "drop"
+  ) %>%
+  group_by(Grupo.Etário) %>%
+  mutate(
+    Total_Grupo = sum(Count),  # Total de ocorrências por grupo etário
+    Frequencia_Relativa = (Count / Total_Grupo) * 100  # Frequência relativa (percentagem)
+  ) %>%
+  select(Grupo.Etário, Acessórios.Passageiro, Count, Frequencia_Relativa)  # Selecionar as colunas desejadas
+
+tabela_frequencias4
+```
+
+##### Visualização
+
+```{r}
+# Juntar as duas tabelas de frequências para a visualização de todos os anos analisados
+
+tabela_frequencias4 <- tabela_frequencias4 %>%
+  mutate(year = 2023) %>% # Adicionar a coluna year
+  select(year, Grupo.Etário, Count, Acessórios.Passageiro, Frequencia_Relativa) # Reordenar as colunas
+
+tabela_frequencias_combinada2 <- bind_rows(tabela_frequencias3, tabela_frequencias4)
+
+
+# Para passageiros maiores de idade
+
+# Filtrar apenas os grupos etários desejados
+grupos_desejados <- c("young_adult", "adult", "experienced_adult", "older_adult", "senior") # Substitua pelos grupos que você quer incluir
+tabela_filtrada <- tabela_frequencias_combinada2 %>%
+  filter(Grupo.Etário %in% grupos_desejados) %>%
+  filter(Acessórios.Passageiro != "C/ sistema retenção de crianças")
+
+# Criar o gráfico com os dados filtrados
+ggplot(tabela_filtrada, aes(x = year, y = Frequencia_Relativa, color = Grupo.Etário, group = interaction(Grupo.Etário, Acessórios.Passageiro))) +
+  geom_line() + # Linhas conectando os pontos
+  geom_point() + # Pontos para destacar os valores
+  facet_wrap(~ Acessórios.Passageiro, scales = "free_y") + # Dividir por uso de acessórios (eixos independentes)
+  labs(
+    title = "Evolução da Frequência Relativa de Passageiros por Grupo Etário (Filtrado)",
+    x = "Ano",
+    y = "Frequência Relativa (%)",
+    color = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom", # Legenda na parte inferior
+    panel.grid.major = element_line(color = "grey80") # Melhorar visualização da grade
+  )
+
+
+# Para passageiros menores de idade
+
+# Filtrar apenas os grupos etários desejados
+grupos_desejados <- c("child", "teenager") # Substitua pelos grupos que você quer incluir
+tabela_filtrada <- tabela_frequencias_combinada2 %>%
+  filter(Grupo.Etário %in% grupos_desejados) 
+
+# Criar o gráfico com os dados filtrados
+ggplot(tabela_filtrada, aes(x = year, y = Frequencia_Relativa, color = Grupo.Etário, group = interaction(Grupo.Etário, Acessórios.Passageiro))) +
+  geom_line() + # Linhas conectando os pontos
+  geom_point() + # Pontos para destacar os valores
+  facet_wrap(~ Acessórios.Passageiro, scales = "free_y") + # Dividir por uso de acessórios (eixos independentes)
+  labs(
+    title = "Evolução da Frequência Relativa de Passageiros por Grupo Etário (Filtrado)",
+    x = "Ano",
+    y = "Frequência Relativa (%)",
+    color = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom", # Legenda na parte inferior
+    panel.grid.major = element_line(color = "grey80") # Melhorar visualização da grade
+  )
+```
+
+### Qual o grupo mais infrator por ano
+
+#### Condutores
+
+```{r}
+# Cinto de Segurança
+
+condutores_sem_cinto <- condut_comb_clean %>%
+  filter(Acessórios.Condutores == "Sem uso de cinto") %>% # Filtrar apenas onde o dispositivo não foi usado
+  group_by(year, Grupo.Etário) %>%
+  summarise(n_nao_usou = n(), .groups = "drop") %>% # Contar casos por ano e grupo etário
+  left_join(
+    condut_comb_clean %>%
+      group_by(Grupo.Etário) %>%
+      summarise(total_etario = n(), .groups = "drop"), # Calcular o total de observações por ano
+    by = "Grupo.Etário"
+  ) %>%
+  mutate(proporcao_nao_usou = n_nao_usou / total_etario) %>% # Calcular a proporção
+  group_by(year) %>%
+  slice_max(proporcao_nao_usou, n = 1) %>% # Selecionar o grupo etário com maior proporção
+  arrange(year)
+
+condutores_sem_cinto
+
+
+# Capacete 
+
+condutores_sem_capacete <- condut_comb_clean %>%
+  filter(Acessórios.Condutores == "Sem uso de capacete") %>% # Filtrar apenas onde o dispositivo não foi usado
+  group_by(year, Grupo.Etário) %>%
+  summarise(n_nao_usou = n(), .groups = "drop") %>% # Contar casos por ano e grupo etário
+  left_join(
+    condut_comb_clean %>%
+      group_by(Grupo.Etário) %>%
+      summarise(total_etario = n(), .groups = "drop"), # Calcular o total de observações por ano
+    by = "Grupo.Etário"
+  ) %>%
+  mutate(proporcao_nao_usou = n_nao_usou / total_etario) %>% # Calcular a proporção
+  group_by(year) %>%
+  slice_max(proporcao_nao_usou, n = 1) %>% # Selecionar o grupo etário com maior proporção
+  arrange(year)
+
+condutores_sem_capacete
+```
+
+##### Visualizações
+
+```{r}
+# Juntar as duas tabelas de frequências para a visualização de todos os anos analisados
+
+condut_23_clean2 <- condut_23_clean %>%
+  mutate(year = 2023) #%>% # Adicionar a coluna year
+  #select(year, Grupo.Etário, Count, Acessórios.Passageiro) # Reordenar as colunas
+
+condut_comb_clean2 <- bind_rows(condut_23_clean2, condut_comb_clean)
+
+
+# Cinto de Segurança
+
+grafico_empilhado_cond_cinto <- function(dados) {
+  # Preparar os dados
+  dados_preparados <- dados %>%
+    filter(Acessórios.Condutores == "Sem uso de cinto") %>%
+    group_by(year, Grupo.Etário) %>%
+    summarise(n_nao_usou = n(), .groups = "drop") %>%
+    left_join(
+      dados %>%
+        group_by(year, Grupo.Etário) %>%
+        summarise(total_etario = n(), .groups = "drop"),
+      by = c("year", "Grupo.Etário")
+    ) %>%
+    mutate(proporcao_nao_usou = n_nao_usou / total_etario) %>%
+    ungroup()
+
+  # Identificar o grupo etário com a maior proporção por ano
+  destaque <- dados_preparados %>%
+    group_by(year) %>%
+    mutate(destaque = ifelse(proporcao_nao_usou == max(proporcao_nao_usou), TRUE, FALSE)) %>%
+    ungroup()
+
+  # Gerar o gráfico
+  ggplot(destaque, aes(x = as.factor(year), y = proporcao_nao_usou, fill = Grupo.Etário, alpha = destaque)) +
+    geom_bar(stat = "identity", position = "stack") +
+    scale_fill_brewer(palette = "Set2") + # Paleta de cores para os grupos etários
+    scale_alpha_manual(values = c(0.4, 1)) + # Destaque: Transparência para grupos não destacados
+    labs(
+      title = "Proporção de Condutores Sem Cinto de Segurança por Grupo Etário (Com Destaque)",
+      x = "Ano",
+      y = "Proporção",
+      fill = "Grupo Etário"
+    ) +
+    theme_minimal()
+}
+
+grafico_empilhado_cond_cinto(condut_comb_clean2)
+
+# Capacetes
+
+grafico_empilhado_cond_capacete <- function(dados) {
+  # Preparar os dados
+  dados_preparados <- dados %>%
+    filter(Acessórios.Condutores == "Sem uso de capacete") %>%
+    group_by(year, Grupo.Etário) %>%
+    summarise(n_nao_usou = n(), .groups = "drop") %>%
+    left_join(
+      dados %>%
+        group_by(year, Grupo.Etário) %>%
+        summarise(total_etario = n(), .groups = "drop"),
+      by = c("year", "Grupo.Etário")
+    ) %>%
+    mutate(proporcao_nao_usou = n_nao_usou / total_etario) %>%
+    ungroup()
+
+  # Identificar o grupo etário com a maior proporção por ano
+  destaque <- dados_preparados %>%
+    group_by(year) %>%
+    mutate(destaque = ifelse(proporcao_nao_usou == max(proporcao_nao_usou), TRUE, FALSE)) %>%
+    ungroup()
+
+  # Gerar o gráfico
+  ggplot(destaque, aes(x = as.factor(year), y = proporcao_nao_usou, fill = Grupo.Etário, alpha = destaque)) +
+    geom_bar(stat = "identity", position = "stack") +
+    scale_fill_brewer(palette = "Set2") + # Paleta de cores para os grupos etários
+    scale_alpha_manual(values = c(0.4, 1)) + # Destaque: Transparência para grupos não destacados
+    labs(
+      title = "Proporção de Condutores Sem Capacete por Grupo Etário (Com Destaque)",
+      x = "Ano",
+      y = "Proporção",
+      fill = "Grupo Etário"
+    ) +
+    theme_minimal()
+}
+
+# Usar a função com o dataset
+grafico_empilhado_cond_capacete(condut_comb_clean2)
+```
+
+#### Passageiros
+
+```{r}
+
+passageiros_sem_cinto_capacete <- passag_comb_clean %>%
+  filter(Acessórios.Passageiro == "S/ uso capacete/cinto segurança") %>% # Filtrar apenas onde o dispositivo não foi usado
+  group_by(year, Grupo.Etário) %>%
+  summarise(n_nao_usou = n(), .groups = "drop") %>% # Contar casos por ano e grupo etário
+  left_join(
+    passag_comb_clean %>%
+      group_by(Grupo.Etário) %>%
+      summarise(total_etario = n(), .groups = "drop"), # Calcular o total de observações por ano
+    by = "Grupo.Etário"
+  ) %>%
+  mutate(proporcao_nao_usou = n_nao_usou / total_etario) %>% # Calcular a proporção
+  group_by(year) %>%
+  slice_max(proporcao_nao_usou, n = 1) %>% # Selecionar o grupo etário com maior proporção
+  arrange(year)
+
+passageiros_sem_cinto_capacete
+```
+
+##### Visualização
+
+```{r}
+# Juntar as duas tabelas de frequências para a visualização de todos os anos analisados
+
+passag_23_clean2 <- passag_23_clean %>%
+  mutate(year = 2023) #%>% # Adicionar a coluna year
+  #select(year, Grupo.Etário, Count, Acessórios.Passageiro) # Reordenar as colunas
+
+passag_comb_clean2 <- bind_rows(passag_23_clean2, passag_comb_clean)
+
+
+grafico_empilhado_cond_capacete <- function(dados) {
+  # Preparar os dados
+  dados_preparados <- dados %>%
+    filter(Acessórios.Passageiro == "S/ uso capacete/cinto segurança") %>%
+    group_by(year, Grupo.Etário) %>%
+    summarise(n_nao_usou = n(), .groups = "drop") %>%
+    left_join(
+      dados %>%
+        group_by(year, Grupo.Etário) %>%
+        summarise(total_etario = n(), .groups = "drop"),
+      by = c("year", "Grupo.Etário")
+    ) %>%
+    mutate(proporcao_nao_usou = n_nao_usou / total_etario) %>%
+    ungroup()
+
+  # Identificar o grupo etário com a maior proporção por ano
+  destaque <- dados_preparados %>%
+    group_by(year) %>%
+    mutate(destaque = ifelse(proporcao_nao_usou == max(proporcao_nao_usou), TRUE, FALSE)) %>%
+    ungroup()
+
+  # Gerar o gráfico
+  ggplot(destaque, aes(x = as.factor(year), y = proporcao_nao_usou, fill = Grupo.Etário, alpha = destaque)) +
+    geom_bar(stat = "identity", position = "stack") +
+    scale_fill_brewer(palette = "Set2") + # Paleta de cores para os grupos etários
+    scale_alpha_manual(values = c(0.4, 1)) + # Destaque: Transparência para grupos não destacados
+    labs(
+      title = "Proporção de Passageiros Sem Capacete por Grupo Etário (Com Destaque)",
+      x = "Ano",
+      y = "Proporção",
+      fill = "Grupo Etário"
+    ) +
+    theme_minimal()
+}
+
+# Usar a função com o dataset
+grafico_empilhado_cond_capacete(passag_comb_clean2)
+```
+
+### Visualizações de uso de cinto por grupo etário por distrito
+
+```{r}
+condut_mota <- condut_comb_clean %>%
+  filter(Acessórios.Condutores %in% c("Capacete", "Sem uso de capacete")) %>%
+  filter(Grupo.Etário %in% c("young", "adult", "senior"))
+
+ggplot(condut_mota, aes(x = Distrito, fill = Acessórios.Condutores)) +
+  geom_bar(position = "dodge", aes(y = ..count..)) +
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Seatbelt Usage by Age Group and District",
+    x = "District",
+    y = "Count",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+condut_mota_norm <- condut_mota %>%
+  group_by(Distrito, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = Distrito, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and District",
+    x = "District",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+ggplot(condut_mota_norm, aes(x = Distrito, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "stack") +
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  scale_y_log10() +  # Apply log scale to y-axis
+  labs(
+    title = "Log-Scaled Seatbelt Usage by Age Group and District",
+    x = "District",
+    y = "Log(Percentage)",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+condut_mota_ratio <- condut_mota %>%
+  group_by(Distrito, Grupo.Etário) %>%
+  summarise(
+    Total = n(),
+    NoBelt = sum(Acessórios.Condutores == "Sem uso de capacete"),
+    Ratio = NoBelt / Total
+  ) %>%
+  ungroup()
+
+ggplot(condut_mota_ratio, aes(x = Distrito, y = Ratio, fill = Distrito)) +
+  geom_col() +
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Ratio of People Without a Helmet by Age Group and District",
+    x = "District",
+    y = "Ratio (No Seatbelt / Total Population)",
+    fill = "District"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+```
+
+```{r}
+condutores_summary <- condut_mota %>%
+  group_by(`Acessórios.Condutores`, `Grupo.Etário`) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(`Acessórios.Condutores`) %>%  # Group by seatbelt status
+  mutate(percentage = count / sum(count) * 100)
+
+ggplot(condutores_summary, aes(x = `Acessórios.Condutores`, y = count, fill = `Grupo.Etário`)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = paste0(round(percentage, 1), "%")), 
+    position = position_fill(vjust = 0.5), 
+    size = 3
+  ) +
+  labs(
+    title = "Proportion of Age Groups by Seatbelt Status",
+    x = "Seatbelt Status",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  theme_minimal()
+####################################################################################################################
+#Concelho, época, periodo_dia, dia_da_semana
+
+condut_mota_norm <- condut_mota %>%
+  group_by(periodo_dia, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = periodo_dia, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Time of Day",
+    x = "Time of Day",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+condut_mota_norm <- condut_mota %>%
+  group_by(dia_da_semana, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = dia_da_semana, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Time of Day",
+    x = "Time of Day",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+condut_mota_norm <- condut_mota %>%
+  group_by(época, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = época, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Time of Day",
+    x = "Time of Day",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+condut_mota_norm <- condut_mota %>%
+  group_by(Concelho, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = Concelho, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Time of Day",
+    x = "Time of Day",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+```
+
+```{r}
+condutores_summary <- condut_mota %>%
+  group_by(`Acessórios.Condutores`, `Grupo.Etário`) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(`Acessórios.Condutores`) %>%  # Group by seatbelt status
+  mutate(percentage = count / sum(count) * 100)
+
+ggplot(condutores_summary, aes(x = `Acessórios.Condutores`, y = count, fill = `Grupo.Etário`)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = paste0(round(percentage, 1), "%")), 
+    position = position_fill(vjust = 0.5), 
+    size = 3
+  ) +
+  labs(
+    title = "Proportion of Age Groups by Seatbelt Status",
+    x = "Seatbelt Status",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  theme_minimal()
+####################################################################################################################
+#Concelho, época, periodo_dia, dia_da_semana
+
+condut_mota_norm <- condut_mota %>%
+  group_by(periodo_dia, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = periodo_dia, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Time of Day",
+    x = "Time of Day",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+condut_mota_norm <- condut_mota %>%
+  group_by(dia_da_semana, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = dia_da_semana, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Time of Day",
+    x = "Time of Day",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+condut_mota_norm <- condut_mota %>%
+  group_by(época, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = época, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Time of Day",
+    x = "Time of Day",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+condut_mota_norm <- condut_mota %>%
+  group_by(Concelho, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+ggplot(condut_mota_norm, aes(x = Concelho, y = Percentage, fill = Acessórios.Condutores)) +
+  geom_col(position = "fill") +  # Use "fill" for proportional representation
+  facet_wrap(~ Grupo.Etário, scales = "free_y") +
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Time of Day",
+    x = "Time of Day",
+    y = "Proportion",
+    fill = "Seatbelt Usage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 10)
+  )
+
+```
+
+```{r}
+condutores_summary <- condut_mota %>%
+  group_by(`Acessórios.Condutores`, `Grupo.Etário`, `year`) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(`Acessórios.Condutores`, `year`) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+# Create the plot
+ggplot(condutores_summary, aes(x = `Acessórios.Condutores`, y = count, fill = `Grupo.Etário`)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = paste0(round(percentage, 1), "%")), 
+    position = position_fill(vjust = 0.5), 
+    size = 3
+  ) +
+  labs(
+    title = "Proportion of Age Groups by Seatbelt Status and Year",
+    x = "Seatbelt Status",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  facet_wrap(~ year, scales = "free_y") +  # Facet by year
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+    strip.text = element_text(size = 10)  # Adjust facet label size
+  )
+
+table(condut_mota$year, condut_mota$Acessórios.Condutores)
+```
+
+```{r}
+condut_mota_norm <- condut_mota %>%
+  group_by(Concelho, Grupo.Etário) %>%
+  count(Acessórios.Condutores) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+# Create the combined stacked bar plot
+ggplot(condut_mota_norm, aes(x = Concelho, y = Percentage, fill = Grupo.Etário)) +
+  geom_col(position = "stack") +  # Use "stack" for stacked bars
+  facet_wrap(~ Acessórios.Condutores) +  # Facet by seatbelt usage
+  labs(
+    title = "Proportional Seatbelt Usage by Age Group and Concelho",
+    x = "Concelho",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+    strip.text = element_text(size = 10)  # Adjust facet label size
+  )
+
+# Calculate the ratio of "Sem uso de capacete" per age group and concelho
+ratio_data <- condut_mota %>%
+  group_by(Concelho, Grupo.Etário) %>%
+  summarize(
+    Total = n(),
+    SemUsoCount = sum(Acessórios.Condutores == "Sem uso de capacete")
+  ) %>%
+  mutate(Ratio = SemUsoCount / Total) %>%
+  ungroup()
+
+# Find the Concelho with the highest ratio per Age Group
+highest_ratio <- ratio_data %>%
+  group_by(Grupo.Etário) %>%
+  slice_max(Ratio, n = 1) %>%  # Get the row with the maximum ratio
+  ungroup()
+
+# View the result
+print(highest_ratio)
+
+sernancelhe_conc <- condut_mota %>%
+  filter(Concelho == "Sernancelhe")
+
+table(sernancelhe_conc$Grupo.Etário, sernancelhe_conc$Acessórios.Condutores)
+#apenas há duas observações neste concelho de jovens a ter acidentes de mota, e são ambos sem capacete, é por isso que este valor se destaca
+
+almeida_conc <- condut_mota %>%
+  filter(Concelho == "Almeida")
+
+table(almeida_conc$Grupo.Etário, almeida_conc$Acessórios.Condutores)
+
+resende_conc <- condut_mota %>%
+  filter(Concelho == "Resende")
+
+table(resende_conc$Grupo.Etário, resende_conc$Acessórios.Condutores)
+# o resto é o mesmo, são só poucas observações
+```
+
+### Exploração da distribuição da utilização de dispositivos por faixa etária, por género
+
+#### Condutores 2010-2019
+
+```{r}
+# 1. Filtrar dados
+# Filtrar dados para quem deve usar cinto de segurança
+dados_cinto <- condut_comb_clean[condut_comb_clean$safety_system == "cinto de segurança",]
+
+# Filtrar dados para quem deve usar capacete
+dados_capacete <- condut_comb_clean[condut_comb_clean$safety_system == "capacete",]
+
+```
+
+```{r}
+# Tabelas de contigência
+
+# Cinto de segurança
+tabela_cinto <- xtabs(~ Sexo + Grupo.Etário + Acessórios.Condutores, data = dados_cinto)
+percent_cinto <- prop.table(tabela_cinto, margin = c(1, 2)) * 100
+
+# Capacete
+tabela_capacete <- xtabs(~ Sexo + Grupo.Etário + Acessórios.Condutores, data = dados_capacete)
+percent_capacete <- prop.table(tabela_capacete, margin = c(1, 2)) * 100
+
+percent_cinto
+percent_capacete
+
+```
+
+```{r}
+# Visualização para Cinto de Segurança
+ggplot(as.data.frame(as.table(percent_cinto)), aes(x = Grupo.Etário, y = Freq, fill = Acessórios.Condutores)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(~ Sexo) +
+  labs(title = "Percentagem de Uso de Cinto de Segurança por Sexo e Grupo Etário",
+       x = "Grupo Etário",
+       y = "Percentagem (%)",
+       fill = "Uso de Acessórios") +
+  theme_minimal()
+
+# Visualização para Capacete
+ggplot(as.data.frame(as.table(percent_capacete)), aes(x = Grupo.Etário, y = Freq, fill = Acessórios.Condutores)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(~ Sexo) +
+  labs(title = "Percentagem de Uso de Capacete por Sexo e Grupo Etário",
+       x = "Grupo Etário",
+       y = "Percentagem (%)",
+       fill = "Uso de Acessórios") +
+  theme_minimal()
+```
+
+#### Condutores 2023
+
+```{r}
+# 1. Filtrar dados
+
+# Filtrar dados para quem deve usar cinto de segurança
+dados_cinto23 <- condut_23_clean[condut_23_clean$safety_system == "cinto de segurança",]
+
+# Filtrar dados para quem deve usar capacete
+dados_capacete23 <- condut_23_clean[condut_23_clean$safety_system == "capacete",]
+
+```
+
+```{r}
+
+# Tabelas de contigência
+
+# Cinto de segurança
+tabela_cinto23 <- xtabs(~ Sexo + Grupo.Etário + Acessórios.Condutores, data = dados_cinto23)
+percent_cinto23 <- prop.table(tabela_cinto23, margin = c(1, 2)) * 100
+
+# Capacete
+tabela_capacete23 <- xtabs(~ Sexo + Grupo.Etário + Acessórios.Condutores, data = dados_capacete23)
+percent_capacete23 <- prop.table(tabela_capacete23, margin = c(1, 2)) * 100
+
+percent_cinto23
+percent_capacete23
+
+```
+
+```{r}
+# Visualização para Cinto de Segurança
+ggplot(as.data.frame(as.table(percent_cinto23)), aes(x = Grupo.Etário, y = Freq, fill = Acessórios.Condutores)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(~ Sexo) +
+  labs(title = "Percentagem de Uso de Cinto de Segurança por Sexo e Grupo Etário",
+       x = "Grupo Etário",
+       y = "Percentagem (%)",
+       fill = "Uso de Acessórios") +
+  theme_minimal()
+
+# Visualização para Capacete
+ggplot(as.data.frame(as.table(percent_capacete23)), aes(x = Grupo.Etário, y = Freq, fill = Acessórios.Condutores)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(~ Sexo) +
+  labs(title = "Percentagem de Uso de Capacete por Sexo e Grupo Etário",
+       x = "Grupo Etário",
+       y = "Percentagem (%)",
+       fill = "Uso de Acessórios") +
+  theme_minimal()
+```
+
+### Análise da Distribuição Relativa à Seriedade dos Acidentes Por Género e Faixa Etária
+
+#### 2023
+
+```{r}
+# Criar tabela de frequências absolutas
+tabela_gravidade23 <- xtabs(~ Lesões.a.30.dias + Grupo.Etário + Sexo, data = dados_cinto23)
+
+# Converter para proporções em relação a cada combinação de Sexo e Age Group
+percent_gravidade23 <- prop.table(tabela_gravidade23, margin = c(2, 3)) * 100
+
+percent_gravidade23
+```
+
+```{r}
+# Converter os dados para formato adequado para o ggplot
+dados_grafico23 <- as.data.frame(as.table(percent_gravidade23))
+colnames(dados_grafico23) <- c("Gravidade", "Faixa_Etária", "Género", "Percentagem")
+
+# Criar o gráfico
+library(ggplot2)
+
+ggplot(dados_grafico23, aes(x = Faixa_Etária, y = Percentagem, fill = Gravidade)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ Género) +
+  labs(
+    title = "Distribuição da Gravidade de Acidentes por Faixa Etária e Género",
+    x = "Faixa Etária",
+    y = "Percentagem (%)",
+    fill = "Gravidade"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Correlação entre entre a utilização do dispositivo de segurança e a faixa etária o p/ distrito
+
+```{r}
+# Condutores:
+
+# Na tabela de condutores de 2010 a 2019 já existia a variável distrito.
+
+# Distritos na variável
+unique(condut_comb_clean$Distrito)
+
+# Foi necessário adicionar essa variável na base de dados condutores_23: WORKS
+condut_23_clean <- dbGetQuery(con, 
+"SELECT c.*, a.Distrito AS Distrito_acidente
+FROM acidentes a                           
+JOIN condutores c
+ON a.`Id..Acidente` = c.`Id..Acidente`")
+condut_23_clean       # ALTERAR O NOME DEPOIS...
+
+# Verificar a base de dados com a coluna adicionada
+View(condut_23_clean)
+
+#Testar se está direitinho (deve de estar):
+testar_distritos <- subset(condut_23_clean, condut_23_clean$Id..Acidente == 20232545009)
+testar_distritos$Distrito_acidente
+
+
+
+# Total de condutores por acidente (ajudar a testar...)
+total_condutores_acidente <- dbGetQuery(con, 
+"SELECT a.`Id..Acidente`, COUNT(c.`Id..Acidente`) AS num_condutores
+FROM acidentes a 
+JOIN condutores c 
+ON a.`Id..Acidente` = c.`Id..Acidente` 
+GROUP BY a.`Id..Acidente`, a.`Distrito` ORDER BY num_condutores DESC;")
+total_condutores_acidente
+
+
+# Como mencionado, na base de dados de condutores de 2010-2019 estava presente a variável distritos, mas essa consiste no distrito do condutor ou no distrito do condutor?
+
+condut_comb_clean <- dbGetQuery(con, 
+"SELECT c.*, a.Distrito AS Distrito_acidente
+FROM acidentes_10_19 a                           
+JOIN condutores_10_19 c
+ON a.`Id..Acidente` = c.`Id..Acidente`")
+condut_comb_clean       
+
+View(condut_comb_clean)
+
+# Concluir se de facto os distritos são o que são:
+testar_uniformidade <- subset(condut_comb_clean, condut_comb_clean$Distrito != condut_comb_clean$Distrito_acidente)
+
+testar_uniformidade
+
+# O distrito é de facto do acidente. Será eliminada a Variável Distrito, mantendo a variável Distrito_acidente, para evitar confusões
+condut_comb_clean$Distrito <- NULL
+
+#!# Retirar a categoria "isentos" da base de dados para 2023
+condut_23_clean_no_isento <- condut_23_clean[condut_23_clean$Acessórios.Condutores != "Isento", ]
+
+condut_23_clean_no_isento
+
+#!# Retirar a categoria "isentos" da base de dados para 2010-2019
+condut_comb_clean_no_isento <- condut_comb_clean[condut_comb_clean$Acessórios.Condutores != "Isento", ]
+
+condut_comb_clean_no_isento
+```
+
+```{r}
+# sem uso de cinto
+
+# Tabela de frequências absolutas sobre os condutores totais de 2023 por distrito:
+n_cond_dis_23 <- sort(table(condut_23_clean_no_isento$Distrito_acidente), decreasing = TRUE)
+n_cond_dis_23
+
+
+# Tabela de frequências absolutas sobre os condutores totais de 2010-19 por distrito:
+n_cond_dis_10_19 <- sort(table(condut_comb_clean_no_isento$Distrito_acidente), decreasing = TRUE)
+n_cond_dis_10_19
+
+unique(condut_comb_clean_no_isento$Acessórios.Condutores)
+
+# Condutores infratores de 2023 (condutores que não usam os dispositivos de segurança):
+Condutores_infratores_23_cinto <- subset(condut_23_clean_no_isento, condut_23_clean_no_isento$Acessórios.Condutores == "Sem uso de cinto")
+
+# Tabela de frequências absolutas sobre os condutores infratores (sem o uso de dispositivos de segurança) de 2023 por distrito:
+n_cond_inf_dis_23_cinto <- sort(table(Condutores_infratores_23_cinto$Distrito_acidente), decreasing = TRUE)
+n_cond_inf_dis_23_cinto
+
+
+# Condutores infratores de 2010-2019 (condutores que não usam os dispositivos de segurança):
+Condutores_infratores_10_19_cinto <- subset(condut_comb_clean_no_isento, condut_comb_clean_no_isento$Acessórios.Condutores == "Sem uso de cinto")
+
+
+# Tabela de frequências absolutas sobre os condutores infratores (sem o uso de dispositivos de segurança) de 2010-2019 por distrito:
+n_cond_inf_dis_10_19_cinto <- sort(table(Condutores_infratores_10_19_cinto$Distrito_acidente), decreasing = TRUE)
+n_cond_inf_dis_10_19_cinto
+
+############################################################
+
+
+#!# Tabela de frequências absolutas sobre os condutores com e sem cinto de 2023 por distrito:
+n_cond_dis_23_cinto_tot <- subset(condut_23_clean_no_isento, condut_23_clean_no_isento$Acessórios.Condutores == "Sem uso de cinto" | condut_23_clean_no_isento$Acessórios.Condutores == "Cinto de segurança" )
+unique(n_cond_dis_23_cinto_tot$Acessórios.Condutores)
+
+#!# Tabela de frequências absolutas sobre os condutores infratores (sem o uso de dispositivos de cinto segurança) de 2023 por distrito:
+n_cond_dis_23_cinto_tot_tab <- sort(table(n_cond_dis_23_cinto_tot$Distrito_acidente), decreasing = TRUE)
+n_cond_dis_23_cinto_tot_tab
+
+#######
+
+#!# Tabela de frequências absolutas sobre os condutores com e sem capacete de 2023 por distrito:
+n_cond_dis_23_capa_tot <- subset(condut_23_clean_no_isento, condut_23_clean_no_isento$Acessórios.Condutores == "Sem uso de capacete" | condut_23_clean_no_isento$Acessórios.Condutores == "Capacete" )
+unique(n_cond_dis_23_capa_tot$Acessórios.Condutores)
+
+#!# Tabela de frequências absolutas sobre os condutores  (com e sem o uso de capacete) de 2023 por distrito:
+n_cond_dis_23_capa_tot_tab <- sort(table(n_cond_dis_23_capa_tot$Distrito_acidente), decreasing = TRUE)
+n_cond_dis_23_capa_tot_tab
+
+```
+
+```{r}
+# sem uso de capacete
+
+# Condutores infratores de 2023 (condutores que não usam os dispositivos de segurança):
+Condutores_infratores_23_capa <- subset(condut_23_clean_no_isento, condut_23_clean_no_isento$Acessórios.Condutores == "Sem uso de capacete")
+
+# Tabela de frequências absolutas sobre os condutores infratores (sem o uso de dispositivos de segurança) de 2023 por distrito:
+n_cond_inf_dis_23_capa <- sort(table(Condutores_infratores_23_capa$Distrito_acidente), decreasing = TRUE)
+n_cond_inf_dis_23_capa
+
+
+# Condutores infratores de 2010-2019 (condutores que não usam os dispositivos de segurança):
+Condutores_infratores_10_19_capa <- subset(condut_comb_clean_no_isento, condut_comb_clean_no_isento$Acessórios.Condutores == "Sem uso de capacete")
+
+
+# Tabela de frequências absolutas sobre os condutores infratores (sem o uso de dispositivos de segurança) de 2010-2019 por distrito:
+n_cond_inf_dis_10_19_capa <- sort(table(Condutores_infratores_10_19_capa$Distrito_acidente), decreasing = TRUE)
+n_cond_inf_dis_10_19_capa
+
+```
+
+```{r}
+
+# Tabela com a relação entre o os condutores infratores de cada distrito com o  total de condutores infratores em 2023;
+
+# para não uso de cinto
+
+#!# Tabela para os condutores de 2023 com e sem cinto segurança 
+
+#!# Tabela de frequências absolutas sobre os condutores com e sem cinto de 2023 por distrito:
+n_cond_dis_23_cinto_tot <- subset(condut_23_clean_no_isento, condut_23_clean_no_isento$Acessórios.Condutores == "Sem uso de cinto" | condut_23_clean_no_isento$Acessórios.Condutores == "Cinto de segurança" )
+unique(n_cond_dis_23_cinto_tot$Acessórios.Condutores)
+
+#!# Tabela de frequências absolutas sobre os condutores infratores (sem o uso de dispositivos de cinto segurança) de 2023 por distrito:
+n_cond_dis_23_cinto_tot_tab <- sort(table(n_cond_dis_23_cinto_tot$Distrito_acidente), decreasing = TRUE)
+n_cond_dis_23_cinto_tot_tab
+
+
+
+
+#!# Para Portugal continental Total (Retirar valores das ilhas)
+categorias <- names(n_cond_dis_23_cinto_tot_tab)
+
+n_cond_dis_23_PC_cinto_tot <- n_cond_dis_23_cinto_tot_tab[!grepl("^Ilha", categorias)]
+n_cond_dis_23_PC_cinto_tot
+
+#!# Verificar se funcionou (Distritos tem que ser igual a 18)
+length(n_cond_dis_23_PC_cinto_tot)
+
+
+#!# O mesmo mas apenas para os condutores infratores em Portugal Continental
+categorias <- names(n_cond_inf_dis_23_cinto)
+
+n_cond_inf_dis_23_PC_cinto <- n_cond_inf_dis_23_cinto[!grepl("^Ilha", categorias)]
+
+#!# Verificar se funcionou (Distritos tem que ser igual a 18) NÃO
+length(n_cond_inf_dis_23_PC_cinto)
+
+#!# Como a tabela anterior não deu 18, deu 17 significa que existe 1 destrito em que todos is acidentes com danos materiais os humanos tinham todos dispositivos de segurança
+setdiff(names(n_cond_dis_23_PC_cinto_tot), names(n_cond_inf_dis_23_PC_cinto))
+
+#!# Adicionar Portalegre com 0 observações
+categorias_existentes <- names(n_cond_inf_dis_23_PC_cinto)
+
+
+#!# Adicionar a nova categoria "Portalegre" sem alterar os valores existentes
+n_cond_inf_dis_23_PC_new_cinto <- table(factor(categorias_existentes, 
+                                         levels = c(categorias_existentes, "Portalegre")))
+
+#!# Preservar os valores originais
+n_cond_inf_dis_23_PC_new_cinto[names(n_cond_inf_dis_23_PC_cinto)] <- as.numeric(n_cond_inf_dis_23_PC_cinto)
+
+#!# Inicializar "Portalegre" com 0
+n_cond_inf_dis_23_PC_new_cinto["Portalegre"] <- 0
+
+#!# Já tem os 18
+length(n_cond_inf_dis_23_PC_new_cinto)
+
+
+#!# Nº total de condutores infratores em 2023
+length(n_cond_inf_dis_23_PC_new_cinto)
+
+#!# Nº total de condutores por distrito em 2023
+length(n_cond_dis_23_PC_cinto_tot)
+
+#!# Ordenar As categorias em data.frame
+categorias_completas <- sort(union(names(n_cond_dis_23_PC_cinto_tot), names(n_cond_inf_dis_23_PC_new_cinto)))
+
+n_cond_dis_23_PC_cinto_tot <- n_cond_dis_23_PC_cinto_tot[categorias_completas]
+n_cond_inf_dis_23_PC_new_cinto <- n_cond_inf_dis_23_PC_new_cinto[categorias_completas]
+
+n_cond_dis_23_PC_cinto_tot
+n_cond_inf_dis_23_PC_new_cinto
+
+
+#!# Transformar em data.frame o número total de condutores por distrito
+n_cond_dis_23_PC_cinto_tot_df <- as.data.frame(n_cond_dis_23_PC_cinto_tot)
+n_cond_dis_23_PC_cinto_tot_df 
+# Transformar em data.frame o número total de condutores infratores por distrito
+valores <- as.integer(as.numeric(n_cond_inf_dis_23_PC_new_cinto))
+cidades <- factor(c("Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", 
+                    "Évora", "Faro", "Guarda", "Leiria", "Lisboa", "Portalegre", 
+                    "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu"))
+
+n_cond_inf_dis_23_PC_new_df_cinto <- data.frame(Var1 = cidades, Freq = valores)
+n_cond_inf_dis_23_PC_new_df_cinto
+
+View(perc_n_condut_infratores_cinto_tot)
+
+perc_n_condut_infratores_cinto_tot <- data.frame(
+  Distrito = n_cond_dis_23_PC_cinto_tot_df$Var1,
+  Racio_infratores = ifelse(n_cond_inf_dis_23_PC_new_df_cinto$Freq == 0, NA, n_cond_inf_dis_23_PC_new_df_cinto$Freq / n_cond_dis_23_PC_cinto_tot_df$Freq) *100
+)
+
+#View(perc_n_condut_infratores_cinto)
+
+
+# para não uso de capacete
+
+#!# Tabela de frequências absolutas sobre os condutores com e sem capacete de 2023 por distrito:
+n_cond_dis_23_capa_tot <- subset(condut_23_clean_no_isento, condut_23_clean_no_isento$Acessórios.Condutores == "Sem uso de capacete" | condut_23_clean_no_isento$Acessórios.Condutores == "Capacete" )
+unique(n_cond_dis_23_capa_tot$Acessórios.Condutores)
+
+#!# Tabela de frequências absolutas sobre os condutores  (com e sem o uso de capacete) de 2023 por distrito:
+n_cond_dis_23_capa_tot_tab <- sort(table(n_cond_dis_23_capa_tot$Distrito_acidente), decreasing = TRUE)
+n_cond_dis_23_capa_tot_tab
+
+
+#!# Para Portugal continental Total (Retirar valores das ilhas)
+categorias <- names(n_cond_dis_23_capa_tot_tab)
+
+n_cond_dis_23_PC_capa_tot <- n_cond_dis_23_capa_tot_tab[!grepl("^Ilha", categorias)]
+n_cond_dis_23_PC_capa_tot
+
+#!# Verificar se funcionou (Distritos tem que ser igual a 18)
+length(n_cond_dis_23_PC_capa_tot)
+
+#!# O mesmo mas apenas para os condutores infratores em Portugal Continental
+categorias_capa <- names(n_cond_inf_dis_23_capa)
+
+n_cond_inf_dis_23_PC_capa <- n_cond_inf_dis_23_capa[!grepl("^Ilha", categorias_capa)]
+
+#!# Verificar se funcionou (Distritos tem que ser igual a 18) NÃO
+length(n_cond_inf_dis_23_PC_capa)
+
+#!# Como a tabela anterior não deu 18, deu 17 significa que existe 1 destrito em que todos is acidentes com danos materiais os humanos tinham todos dispositivos de segurança
+setdiff(names(n_cond_dis_23_PC_capa_tot), names(n_cond_inf_dis_23_PC_capa))
+
+#!# Adicionar Portalegre com 0 observações
+categorias_existentes_capa <- names(n_cond_inf_dis_23_PC_capa)
+
+
+#!# Adicionar a nova categoria "Portalegre" sem alterar os valores existentes
+n_cond_inf_dis_23_PC_new_capa <- table(factor(categorias_existentes_capa, 
+                            levels = c(categorias_existentes_capa, "Portalegre","Castelo Branco","Guarda","Évora")))
+
+#!# Preservar os valores originais
+n_cond_inf_dis_23_PC_new_capa[names(n_cond_inf_dis_23_PC_capa)] <- as.numeric(n_cond_inf_dis_23_PC_capa)
+
+#!# Inicializar "Portalegre" e outros com 0
+n_cond_inf_dis_23_PC_new_capa["Portalegre"] <- 0
+n_cond_inf_dis_23_PC_new_capa["Castelo Branco"] <- 0
+n_cond_inf_dis_23_PC_new_capa["Guarda"] <- 0
+n_cond_inf_dis_23_PC_new_capa["Évora"] <- 0
+
+#!# Já tem os 18
+length(n_cond_inf_dis_23_PC_new_capa)
+
+
+#!# Nº total de condutores infratores em 2023
+length(n_cond_inf_dis_23_PC_new_capa)
+
+#!# Nº total de condutores por distrito em 2023
+length(n_cond_dis_23_PC_capa_tot)
+
+#!# Ordenar As categorias em data.frame
+categorias_completas_capa <- sort(union(names(n_cond_dis_23_PC_capa_tot), names(n_cond_inf_dis_23_PC_new_capa)))
+
+n_cond_dis_23_PC_capa_tot <- n_cond_dis_23_PC_capa_tot[categorias_completas_capa]
+n_cond_inf_dis_23_PC_new_capa <- n_cond_inf_dis_23_PC_new_capa[categorias_completas_capa]
+
+n_cond_dis_23_PC_capa_tot
+n_cond_inf_dis_23_PC_new_capa
+
+#!# Transformar em data.frame o número total de condutores por distrito
+n_cond_dis_23_PC_capa_tot_df <- as.data.frame(n_cond_dis_23_PC_capa_tot)
+n_cond_dis_23_PC_capa_tot_df 
+
+#!# Transformar em data.frame o número total de condutores infratores por distrito
+valores <- as.integer(as.numeric(n_cond_inf_dis_23_PC_new_capa))
+cidades <- factor(c("Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", 
+             "Évora", "Faro", "Guarda", "Leiria", "Lisboa", "Portalegre", 
+             "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu"))
+
+n_cond_inf_dis_23_PC_new_df_capa <- data.frame(Var1 = cidades, Freq = valores)
+n_cond_inf_dis_23_PC_new_df_capa
+
+View(perc_n_condut_infratores_capa_tot)
+
+perc_n_condut_infratores_capa_tot <- data.frame(
+  Distrito = n_cond_dis_23_PC_capa_tot_df$Var1,
+  Racio_infratores = ifelse(n_cond_inf_dis_23_PC_new_df_capa$Freq == 0, NA, n_cond_inf_dis_23_PC_new_df_capa$Freq / n_cond_dis_23_PC_capa_tot_df$Freq) *100
+)
+
+# Função que faz mapa país:
+f_mapa_racio_distrito_mais_seguro <- function(shapefile_path, df_racio, title) {
+  # Ler o shapefile
+  distritos <- st_read(shapefile_path, quiet = TRUE)
+  
+  # Filtrar para distritos continentais
+  distritos_continentais <- distritos %>%
+    filter(!TYPE_1 %in% "Regiões autônomas")
+  
+  # Renomear colunas para combinar com o shapefile
+  df_racio <- df_racio %>%
+    rename(NAME_1 = Distrito, FREQUENCIA = Racio_infratores)
+  
+  # Associar valores do percentagem ao shapefile
+  distritos_continentais <- distritos_continentais %>%
+    left_join(df_racio, by = "NAME_1")
+  
+  # Criar o gráfico
+  ggplot(data = distritos_continentais) +
+    geom_sf(aes(fill = FREQUENCIA), color = "black") +
+    geom_sf_pattern(
+      data = subset(distritos_continentais, is.na(FREQUENCIA)), # Apenas para NA
+      aes(geometry = geometry), 
+      pattern = "stripe",       # Define o padrão como riscas
+      pattern_fill = "grey80",  # Cor do padrão
+      pattern_density = 0.5,    # Densidade das riscas
+      pattern_angle = 45,       
+      color = "black"           
+    ) +
+    ggtitle(title) +
+    scale_fill_gradientn(
+      #colours = c("darkred", "firebrick", "yellow", "yellowgreen","green3" , "green4" , "green4"),
+      #colours = c("green4", "green4", "green3", "yellowgreen","yellow" , "firebrick" , "darkred"),
+      colours = c("green3", "yellow", "firebrick3" , "firebrick3", "darkred", "black"),
+      values = scales::rescale(c( 0.00, 0.50, 1, 1.5, 2, 2.5)),
+      na.value = NA,
+      limits = c(0, 2.5),
+      breaks = seq(0, 2.5, by = 0.5)
+    ) +
+    theme_minimal() +
+    labs(fill = "Nº condutores (%)") +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank(),
+      plot.title = element_text(hjust = 0.5),
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 8),
+      legend.position = c(1.39, 0.75),
+      legend.key.size = unit(0.5, "cm"),
+      legend.spacing.y = unit(0.3, "cm")
+    )
+}
+
+# Distritos mais cumpridores da segurança em 2023:
+f_mapa_racio_distrito_mais_seguro(
+  shapefile_path = "distritos.shp",
+  df_racio = perc_n_condut_infratores_cinto_tot,
+  title = "Distritos com condutores mais seguros em 2023 (cinto de segurança) "
+)
+
+f_mapa_racio_distrito_mais_seguro(
+  shapefile_path = "distritos.shp",
+  df_racio = perc_n_condut_infratores_capa_tot,
+  title = "Distritos com condutores mais seguros em 2023 (capacete) "
+)
+
+# Atenção que existe dados de acidentes em relação às ilhas apenas em 2023. Nos outros anos de 2010-19 não existe
+
+# Distritos únicos para 2023 (18 apenas portugal continental)
+unique(acidentes_combined$Distrito)
+
+# Distritos únicos para 2023 (28 incluíndo Portugal continental e ilhas)
+unique(acidentes_23$Distrito)
+
+```
+
+```{r}
+
+#!#
+
+# Condutores infratores de 2023 (condutores que não usam os dispositivos de segurança):
+Condutores_infratores_23 <- subset(condut_23_clean_no_isento, condut_23_clean_no_isento$Acessórios.Condutores == "Sem uso de cinto" | condut_23_clean_no_isento$Acessórios.Condutores == "Sem uso de capacete" )
+
+
+# Tabela de frequências absolutas sobre os condutores infratores (sem o uso de dispositivos de segurança) de 2023 por distrito:
+n_cond_inf_dis_23 <- sort(table(Condutores_infratores_23$Distrito_acidente), decreasing = TRUE)
+n_cond_inf_dis_23
+
+
+# Para Portugal continental Total (Retirar valores das ilhas)
+categorias <- names(n_cond_dis_23)
+
+n_cond_dis_23_PC <- n_cond_dis_23[!grepl("^Ilha", categorias)]
+n_cond_dis_23_PC
+# Verificar se funcionou (Distritos tem que ser igual a 18)
+length(n_cond_dis_23_PC)
+
+
+# O mesmo mas apenas para os condutores infratores em Portugal Continental
+categorias <- names(n_cond_inf_dis_23)
+
+n_cond_inf_dis_23_PC <- n_cond_inf_dis_23[!grepl("^Ilha", categorias)]
+
+# Verificar se funcionou (Distritos tem que ser igual a 18) NÃO
+length(n_cond_inf_dis_23_PC)
+
+# Como a tabela anterior não deu 18, deu 17 significa que existe 1 destrito em que todos is acidentes com danos materiais os humanos tinham todos dispositivos de segurança
+setdiff(names(n_cond_dis_23_PC), names(n_cond_inf_dis_23_PC))
+
+# Adicionar Portalegre com 0 observações
+categorias_existentes <- names(n_cond_inf_dis_23_PC)
+
+
+# Adicionar a nova categoria "Portalegre" sem alterar os valores existentes
+n_cond_inf_dis_23_PC_new <- table(factor(categorias_existentes, 
+                                         levels = c(categorias_existentes, "Portalegre")))
+
+# Preservar os valores originais
+n_cond_inf_dis_23_PC_new[names(n_cond_inf_dis_23_PC)] <- as.numeric(n_cond_inf_dis_23_PC)
+
+# Inicializar "Portalegre" com 0
+n_cond_inf_dis_23_PC_new["Portalegre"] <- 0
+
+# Já tem os 18
+length(n_cond_inf_dis_23_PC_new)
+
+
+# Nº total de condutores infratores em 2023
+length(n_cond_inf_dis_23_PC_new)
+
+# Nº total de condutores por distrito em 2023
+length(n_cond_dis_23_PC)
+
+# Ordenar As categorias em data.frame
+categorias_completas <- sort(union(names(n_cond_dis_23_PC), names(n_cond_inf_dis_23_PC_new)))
+
+n_cond_dis_23_PC <- n_cond_dis_23_PC[categorias_completas]
+n_cond_inf_dis_23_PC_new <- n_cond_inf_dis_23_PC_new[categorias_completas]
+
+n_cond_dis_23_PC
+n_cond_inf_dis_23_PC_new
+
+
+# Transformar em data.frame o número total de condutores por distrito
+n_cond_dis_23_PC_df <- as.data.frame(n_cond_dis_23_PC)
+n_cond_dis_23_PC_df 
+# Transformar em data.frame o número total de condutores infratores por distrito
+valores <- as.integer(as.numeric(n_cond_inf_dis_23_PC_new))
+cidades <- factor(c("Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", 
+                    "Évora", "Faro", "Guarda", "Leiria", "Lisboa", "Portalegre", 
+                    "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu"))
+
+n_cond_inf_dis_23_PC_new_df <- data.frame(Var1 = cidades, Freq = valores)
+n_cond_inf_dis_23_PC_new_df
+
+#View(n_cond_inf_dis_23_PC_new_df_cinto)
+
+perc_n_condut_infratores <- data.frame(
+  Distrito = n_cond_dis_23_PC_df$Var1,
+  Racio_infratores = ifelse(n_cond_inf_dis_23_PC_new_df$Freq == 0, NA, n_cond_inf_dis_23_PC_new_df$Freq / n_cond_dis_23_PC_df$Freq) *100
+)
+
+View(perc_n_condut_infratores)
+
+f_mapa_racio_distrito_mais_seguro(
+  shapefile_path = "distritos.shp",
+  df_racio = perc_n_condut_infratores,
+  title = "Distritos com condutores mais seguros em 2023 (Cinto e Capacete) "
+)
+
+```
+
+```{r}
+
+# Para a base de dados dos condutres entre 2010 e 2019
+
+# Verificar quais os anos onde condutores infratores não existem
+verificar_distritos <- function(data) {
+  # Obter os anos únicos
+  anos <- unique(data$year)
+  
+  # Inicializar vetor para armazenar os anos que não têm 18 distritos
+  anos_diferentes <- c()
+  
+  # Iterar sobre cada ano
+  for (ano in anos) {
+    # Filtrar os dados para o ano atual
+    dados_ano <- subset(data, year == ano)
+    
+    # Contar o número de distritos únicos
+    n_distritos <- length(unique(dados_ano$Distrito_acidente))
+    
+    # Verificar se o número de distritos é diferente de 18
+    if (n_distritos != 18) {
+      anos_diferentes <- c(anos_diferentes, ano)
+    }
+  }
+  
+  # Retornar os anos que não atendem à condição
+  return(anos_diferentes)
+}
+
+verificar_distritos(Condutores_infratores_10_19_cinto)
+verificar_distritos(Condutores_infratores_10_19_capa)
+
+# Nos anos 2016, 2017 e 2018 existiram distritos onde, nos acidentes com danos materiais ou humanos fora caracterizados, não existiam condutores sem o cinto/capacete
+
+```
+
+```{r}
+# Tabela com o Ranking dos distritos com o menor percentagem entre condutores totais no distrito e os condutores infratores.
+
+#Condutores em 2010:
+
+# para o não uso de cinto de segurança
+
+# filtrar dados apenas se tem ou não cinto:
+condutores_2010_cinto <- subset(condut_comb_clean_no_isento, (condut_comb_clean_no_isento$Acessórios.Condutores == "Sem uso de cinto" | condut_comb_clean_no_isento$Acessórios.Condutores == "Cinto de segurança" ) & (condut_comb_clean_no_isento$year == 2010))
+
+
+condutores_infratores_2010_cinto <- subset(Condutores_infratores_10_19_cinto, Condutores_infratores_10_19_cinto$year == 2010)
+
+# nº distritos nos condutores infratores:
+length(unique(condutores_infratores_2010_cinto$Distrito_acidente))
+
+# Tabela de frequências absolutas dos condutores totais por distrito
+n_cond_dis_10_PC_cinto_tot <- table( condutores_2010_cinto$Distrito_acidente)
+n_cond_dis_10_PC_cinto_tot
+
+# Tabela de frequências dos condutores infratores por distrito
+n_cond_inf_dis_10_PC_cinto <- table(condutores_infratores_2010_cinto$Distrito_acidente)
+n_cond_inf_dis_10_PC_cinto
+
+# Assegurar que as categorias em data.frame estão ordenadas 
+categorias_completas_cinto <- sort(union(names( n_cond_dis_10_PC_cinto_tot), names(n_cond_inf_dis_10_PC_cinto)))
+
+n_cond_dis_10_PC_cinto_tot <-  n_cond_dis_10_PC_cinto_tot[categorias_completas_cinto]
+n_cond_inf_dis_10_PC_cinto <- n_cond_inf_dis_10_PC_cinto[categorias_completas_cinto]
+
+# Transformar em data.frame o número total de condutores por distrito
+ n_cond_dis_10_PC_cinto_tot_df <- as.data.frame( n_cond_dis_10_PC_cinto_tot)
+ n_cond_dis_10_PC_cinto_tot_df 
+
+n_cond_inf_dis_10_PC_df_cinto <- as.data.frame(n_cond_inf_dis_10_PC_cinto)
+n_cond_inf_dis_10_PC_df_cinto
+
+# data.frame com a percentagem:
+
+perc_n_condut_infratores_10_cinto_tot <- data.frame(
+  Distrito = n_cond_inf_dis_10_PC_df_cinto$Var1,
+  Racio_infratores = ifelse(n_cond_inf_dis_10_PC_df_cinto$Freq == 0, NA, n_cond_inf_dis_10_PC_df_cinto$Freq /  n_cond_dis_10_PC_cinto_tot_df$Freq) * 100
+)
+
+
+View(perc_n_condut_infratores_10_cinto_tot)
+
+# Distritos mais cumpridores da segurança em 2010:
+f_mapa_racio_distrito_mais_seguro(
+  shapefile_path = "distritos.shp",
+  df_racio = perc_n_condut_infratores_10_cinto_tot,
+  title = "Distritos com condutores mais seguros em 2010 (Cinto de segurança)"
+)
+
+
+
+
+
+# para o não uso de capacete
+
+condutores_2010_capa <- subset(condut_comb_clean_no_isento, (condut_comb_clean_no_isento$Acessórios.Condutores == "Sem uso de capacete" | condut_comb_clean_no_isento$Acessórios.Condutores == "Capacete" ) & (condut_comb_clean_no_isento$year == 2010))
+
+
+condutores_infratores_2010 <- subset(Condutores_infratores_10_19_capa, Condutores_infratores_10_19_capa$year == 2010)
+
+# nº distritos nos condutores infratores (15):
+length(unique(condutores_infratores_2010$Distrito_acidente))
+
+
+# Tabela de frequências absolutas dos condutores totais por distrito
+n_cond_dis_10_PC_capa_tot <- table( condutores_2010_capa$Distrito_acidente)
+n_cond_dis_10_PC_capa_tot
+ 
+ 
+# Tabela de frequências dos condutores infratores por distrito
+n_cond_inf_dis_10_PC_capa <- table(condutores_infratores_2010$Distrito_acidente)
+n_cond_inf_dis_10_PC_capa
+
+ 
+ 
+# Como a tabela anterior não deu 18, deu 16 significa que existem 2 destritos em que todos os cndutores presentes nos acidentes tinham dispositvos de segurança 
+setdiff(names(n_cond_dis_10_PC_capa_tot), names(n_cond_inf_dis_10_PC_capa))
+
+# Adicionar Portalegre com 0 observações
+categorias_existentes <- names(n_cond_inf_dis_10_PC_capa)
+
+
+# Adicionar a nova categoria "Portalegre" e "Bragança" sem alterar os valores existentes
+n_cond_inf_dis_10_PC_capa_new <- table(factor(categorias_existentes, 
+                            levels = c(categorias_existentes, "Portalegre", "Bragança", "Évora")))
+
+# Preservar os valores originais
+n_cond_inf_dis_10_PC_capa_new[names(n_cond_inf_dis_10_PC_capa)] <- as.numeric(n_cond_inf_dis_10_PC_capa)
+
+# Inicializar "Portalegre" com 0
+n_cond_inf_dis_10_PC_capa_new["Portalegre"] <- 0
+n_cond_inf_dis_10_PC_capa_new["Bragança"] <- 0
+n_cond_inf_dis_10_PC_capa_new["Évora"] <- 0
+# Já tem os 18
+length(n_cond_inf_dis_10_PC_capa_new)
+ 
+
+
+# Assegurar que as categorias em data.frame estão ordenadas 
+categorias_completas <- sort(union(names(n_cond_dis_10_PC_capa_tot), names( n_cond_inf_dis_10_PC_capa_new)))
+
+n_cond_dis_10_PC_capa_tot <- n_cond_dis_10_PC_capa_tot[categorias_completas]
+n_cond_inf_dis_10_PC_capa_new <- n_cond_inf_dis_10_PC_capa_new[categorias_completas]
+
+# Transformar em data.frame o número total de condutores por distrito
+n_cond_dis_10_PC_capa_tot_df <- as.data.frame(n_cond_dis_10_PC_capa_tot)
+n_cond_dis_10_PC_capa_tot_df
+
+
+# Transformar em data.frame o número total de condutores infratores por distrito
+valores <- as.integer(as.numeric(n_cond_inf_dis_10_PC_capa_new))
+cidades <- factor(c("Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", 
+                    "Évora", "Faro", "Guarda", "Leiria", "Lisboa", "Portalegre", 
+                    "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu"))
+
+n_cond_inf_dis_10_PC_capa_new_df <- data.frame(Var1 = cidades, Freq = valores)
+n_cond_inf_dis_10_PC_capa_new_df
+
+
+# data.frame com a percentagem:
+perc_n_condut_infratores_10_capa_tot <- data.frame(
+  Distrito =  n_cond_inf_dis_10_PC_capa_new_df$Var1,
+  Racio_infratores = ifelse( n_cond_inf_dis_10_PC_capa_new_df$Freq == 0, NA,  n_cond_inf_dis_10_PC_capa_new_df$Freq /  n_cond_dis_10_PC_capa_tot_df$Freq) * 100
+)
+
+
+#View(perc_n_condut_infratores_10_capa_tot)
+
+
+
+f_mapa_racio_distrito_mais_seguro_adapt <- function(shapefile_path, df_racio, title) {
+  # Ler o shapefile
+  distritos <- st_read(shapefile_path, quiet = TRUE)
+  
+  # Filtrar para distritos continentais
+  distritos_continentais <- distritos %>%
+    filter(!TYPE_1 %in% "Regiões autônomas")
+  
+  # Renomear colunas para combinar com o shapefile
+  df_racio <- df_racio %>%
+    rename(NAME_1 = Distrito, FREQUENCIA = Racio_infratores)
+  
+  # Associar valores do percentagem ao shapefile
+  distritos_continentais <- distritos_continentais %>%
+    left_join(df_racio, by = "NAME_1")
+  
+  # Criar o gráfico
+  ggplot(data = distritos_continentais) +
+    geom_sf(aes(fill = FREQUENCIA), color = "black") +
+    geom_sf_pattern(
+      data = subset(distritos_continentais, is.na(FREQUENCIA)), # Apenas para NA
+      aes(geometry = geometry), 
+      pattern = "stripe",       # Define o padrão como riscas
+      pattern_fill = "grey80",  # Cor do padrão
+      pattern_density = 0.5,    # Densidade das riscas
+      pattern_angle = 45,       
+      color = "black"           
+    ) +
+    ggtitle(title) +
+    scale_fill_gradientn(
+      #colours = c("darkred", "firebrick", "yellow", "yellowgreen","green3" , "green4" , "green4"),
+      #colours = c("green4", "green4", "green3", "yellowgreen","yellow" , "firebrick" , "darkred"),
+      colours = c("green3", "yellow", "firebrick3" , "firebrick3", "darkred", "black"),
+      values = scales::rescale(c( 0.00, 0.50, 1, 1.5, 2, 2.5)),
+      na.value = NA,
+      limits = c(0, 5),
+      breaks = c(seq(0, 2.5, by = 0.5), 5)
+    ) +
+    theme_minimal() +
+    labs(fill = "Nº condutores (%)") +
+    theme(
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank(),
+      plot.title = element_text(hjust = 0.5),
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 8),
+      legend.position = c(1.39, 0.75),
+      legend.key.size = unit(0.5, "cm"),
+      legend.spacing.y = unit(0.3, "cm")
+    )
+}
+
+
+# Distritos mais cumpridores da segurança em 2010:
+f_mapa_racio_distrito_mais_seguro_adapt(
+  shapefile_path = "distritos.shp",
+  df_racio = perc_n_condut_infratores_10_capa_tot,
+  title = "Distritos com condutores mais seguros em 2010 (capacete)"
+)
+```
+
+```{r}
+
+# Tabela com o Ranking dos distritos com o menor percentagem entre condutores totais no distrito e os condutores infratores.
+
+#Condutores em 2010:
+
+Condutores_infratores_10_19 <- subset(condut_comb_clean_no_isento, condut_comb_clean_no_isento$Acessórios.Condutores == "Sem uso de cinto" | condut_comb_clean_no_isento$Acessórios.Condutores == "Sem uso de capacete")
+
+# filtrar dados de 2010:
+condutores_2010 <- subset(condut_comb_clean_no_isento, condut_comb_clean_no_isento$year == 2010) 
+
+condutores_infratores_2010 <- subset(Condutores_infratores_10_19, Condutores_infratores_10_19$year == 2010)
+
+# nº distritos nos condutores infratores:
+length(unique(condutores_infratores_2010$Distrito_acidente))
+
+# Tabela de frequências absolutas dos condutores totais por distrito
+n_cond_dis_10_PC <- table(condutores_2010$Distrito_acidente)
+n_cond_dis_10_PC
+
+# Tabela de frequências dos condutores infratores por distrito
+n_cond_inf_dis_10_PC <- table(condutores_infratores_2010$Distrito_acidente)
+n_cond_inf_dis_10_PC
+
+# Assegurar que as categorias em data.frame estão ordenadas 
+categorias_completas <- sort(union(names(n_cond_dis_10_PC), names(n_cond_inf_dis_10_PC)))
+
+n_cond_dis_10_PC <- n_cond_dis_10_PC[categorias_completas]
+n_cond_inf_dis_10_PC <- n_cond_inf_dis_10_PC[categorias_completas]
+
+# Transformar em data.frame o número total de condutores por distrito
+n_cond_dis_10_PC_df <- as.data.frame(n_cond_dis_10_PC)
+n_cond_dis_10_PC_df 
+
+n_cond_inf_dis_10_PC_df <- as.data.frame(n_cond_inf_dis_10_PC)
+n_cond_inf_dis_10_PC_df
+
+# data.frame com a percentagem:
+
+perc_n_condut_infratores_10 <- data.frame(
+  Distrito = n_cond_inf_dis_10_PC_df$Var1,
+  Racio_infratores = ifelse(n_cond_inf_dis_10_PC_df$Freq == 0, NA, n_cond_inf_dis_10_PC_df$Freq / n_cond_dis_10_PC_df$Freq) * 100
+)
+
+
+#View(perc_n_condut_infratores_10)
+
+# Distritos mais cumpridores da segurança em 2010:
+f_mapa_racio_distrito_mais_seguro(
+  shapefile_path = "distritos.shp",
+  df_racio = perc_n_condut_infratores_10,
+  title = "Distritos com condutores mais seguros em 2010 (Por cada 1 condutor infrator)"
+)
+```
+
+```{r}
+
+Condutores_infratores_10_19 <- subset(condut_comb_clean_no_isento, condut_comb_clean_no_isento$Acessórios.Condutores == "Sem uso de cinto" | condut_comb_clean_no_isento$Acessórios.Condutores == "Sem uso de capacete")
+
+# Tabela com o Ranking dos distritos com o menor percentagem entre condutores totais no distrito e os condutores infratores.
+
+# Condutores em 2019:
+
+# filtrar dados de 2019:
+condutores_2019 <- subset(condut_comb_clean_no_isento, condut_comb_clean_no_isento$year == 2019) 
+
+condutores_infratores_2019 <- subset(Condutores_infratores_10_19, Condutores_infratores_10_19$year == 2019)
+
+# nº distritos nos condutores infratores:
+length(unique(condutores_infratores_2019$Distrito_acidente))
+
+# Tabela de frequências absolutas dos condutores totais por distrito
+n_cond_dis_19_PC <- table(condutores_2019$Distrito_acidente)
+n_cond_dis_19_PC
+
+# Tabela de frequências dos condutores infratores por distrito
+n_cond_inf_dis_19_PC <- table(condutores_infratores_2019$Distrito_acidente)
+n_cond_inf_dis_19_PC
+
+# Assegurar que as categorias em data.frame estão ordenadas 
+categorias_completas <- sort(union(names(n_cond_dis_19_PC), names(n_cond_inf_dis_19_PC)))
+
+n_cond_dis_19_PC <- n_cond_dis_19_PC[categorias_completas]
+n_cond_inf_dis_19_PC <- n_cond_inf_dis_19_PC[categorias_completas]
+
+# Transformar em data.frame o número total de condutores por distrito
+n_cond_dis_19_PC_df <- as.data.frame(n_cond_dis_19_PC)
+n_cond_dis_19_PC_df 
+
+n_cond_inf_dis_19_PC_df <- as.data.frame(n_cond_inf_dis_19_PC)
+n_cond_inf_dis_19_PC_df
+
+# data.frame com a percentagem:
+
+perc_n_condut_infratores_19 <- data.frame(
+  Distrito = n_cond_inf_dis_19_PC_df$Var1,
+  Racio_infratores = ifelse(n_cond_inf_dis_19_PC_df$Freq == 0, NA, n_cond_inf_dis_19_PC_df$Freq / n_cond_dis_19_PC_df$Freq) * 100
+)
+
+#View(perc_n_condut_infratores_19)
+
+# Distritos mais cumpridores da segurança em 2019:
+f_mapa_racio_distrito_mais_seguro(
+  shapefile_path = "distritos.shp",
+  df_racio = perc_n_condut_infratores_19,
+  title = "Distritos com condutores mais seguros em 2019 (Por cada 1 condutor infrator)"
+)
+
+
+```
+
+```{r}
+
+# Tabela com o Ranking dos distritos com o menor percentagem entre condutores totais no distrito e os condutores infratores.
+
+#teste para condutores em 2018:
+
+# filtrar dados de 2018:
+condutores_2018 <- subset(condut_comb_clean_no_isento, condut_comb_clean_no_isento$year == 2018) 
+
+condutores_infratores_2018 <- subset(Condutores_infratores_10_19, Condutores_infratores_10_19$year == 2018)
+
+# nº distritos nos condutores infratores:
+length(unique(condutores_infratores_2018$Distrito_acidente))
+
+
+# Tabela de frequências absolutas dos condutores totais por distrito
+n_cond_dis_18_PC <- table(condutores_2018$Distrito_acidente)
+n_cond_dis_18_PC
+
+# Tabela de frequências dos condutores infratores por distrito
+n_cond_inf_dis_18_PC <- table(condutores_infratores_2018$Distrito_acidente)
+n_cond_inf_dis_18_PC
+
+
+# Como a tabela anterior não deu 18, deu 16 significa que existem 2 destritos em que todos os cndutores presentes nos acidentes tinham dispositvos de segurança 
+setdiff(names(n_cond_dis_18_PC), names(n_cond_inf_dis_18_PC))
+
+# Adicionar Portalegre com 0 observações
+categorias_existentes <- names(n_cond_inf_dis_18_PC)
+
+
+# Adicionar a nova categoria "Portalegre" e "Bragança" sem alterar os valores existentes
+n_cond_inf_dis_18_PC_new <- table(factor(categorias_existentes, 
+                            levels = c(categorias_existentes, "Portalegre", "Bragança")))
+
+# Preservar os valores originais
+n_cond_inf_dis_18_PC_new[names(n_cond_inf_dis_18_PC)] <- as.numeric(n_cond_inf_dis_18_PC)
+
+# Inicializar "Portalegre" com 0
+n_cond_inf_dis_18_PC_new["Portalegre"] <- 0
+n_cond_inf_dis_18_PC_new["Bragança"] <- 0
+
+# Já tem os 18
+length(n_cond_inf_dis_18_PC_new)
+
+
+
+# Assegurar que as categorias em data.frame estão ordenadas 
+categorias_completas <- sort(union(names(n_cond_dis_18_PC), names(n_cond_inf_dis_18_PC)))
+
+n_cond_dis_18_PC <- n_cond_dis_18_PC[categorias_completas]
+n_cond_inf_dis_18_PC_new <- n_cond_inf_dis_18_PC_new[categorias_completas]
+
+n_cond_dis_18_PC
+n_cond_inf_dis_18_PC_new
+
+
+# Transformar em data.frame o número total de condutores por distrito
+n_cond_dis_18_PC_df <- as.data.frame(n_cond_dis_18_PC)
+n_cond_dis_18_PC_df 
+# Transformar em data.frame o número total de condutores infratores por distrito
+valores <- as.integer(as.numeric(n_cond_inf_dis_18_PC_new))
+cidades <- factor(c("Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", 
+             "Évora", "Faro", "Guarda", "Leiria", "Lisboa", "Portalegre", 
+             "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu"))
+
+n_cond_inf_dis_18_PC_new_df <- data.frame(Var1 = cidades, Freq = valores)
+n_cond_inf_dis_18_PC_new_df
+
+
+# data.frame com a percentagem:
+
+
+perc_n_condut_infratores_18 <- data.frame(
+  Distrito = n_cond_inf_dis_18_PC_new_df$Var1,
+  Racio_infratores = ifelse(n_cond_inf_dis_18_PC_new_df$Freq == 0, NA, n_cond_inf_dis_18_PC_new_df$Freq / n_cond_dis_18_PC_df$Freq) *100
+)
+
+
+#View(perc_n_condut_infratores_18)
+
+# Distritos mais cumpridores da segurança em 2018:
+f_mapa_racio_distrito_mais_seguro(
+  shapefile_path = "distritos.shp",
+  df_racio = perc_n_condut_infratores_18,
+  title = "percentagem do nº Total condutores pelo nº infratores p/distrito em 2018"
+)
+```
+
+### Correlação entre utilização do dispositivo de segurança e a faixa etária por altura do ano (época, período do dia, dia da semana)
+
+#### Dispositivo de segurança e a faixa etária por **periodo do dia**
+
+##### Para Condutores 2010-2019 e Condutores em 2023
+
+```{r}
+# Criar variável 'year' como inteiro para 2023 e 'ano' como caractere para '2023'
+condut_23_clean <- condut_23_clean %>%
+  mutate(
+    year = 2023,
+    ano = "2023"
+  )
+
+# Criar variável 'year' para anos de 2010 a 2019 e 'ano' como '2010-2019'
+condut_comb_clean <- condut_comb_clean %>%
+  mutate(
+    year = as.integer(year),  # Converte para número (2010–2019)
+    ano = "2010-2019"         # Define o valor fixo para a agregação
+  )
+
+# Filtrar dados para 2010-2019, excluindo "normal" da época
+dados_2010_2019 <- condut_comb_clean %>%
+  filter(`época` != "normal")  # Excluir linhas indesejadas
+
+# Filtrar dados para 2023
+dados_2023 <- condut_23_clean %>%
+  filter(`época` != "normal")
+
+# Configurar categorias de grupo etário específicas por período  SÓ HÁ 3, VOU MANTER AS 3 DEPOIS AJEITA RITA E APAGA ISTO HAHA
+categorias_2010_2019 <- c("young", "adult", "Senior")
+categorias_2023 <- c("young", "adult", "Senior")
+
+# Filtrar dados para cada período
+dados_2010_2019 <- dados_2010_2019 %>%
+  filter(!is.na(`Grupo.Etário`), `Grupo.Etário` %in% categorias_2010_2019)
+
+dados_2023 <- dados_2023 %>%
+  filter(!is.na(`Grupo.Etário`), `Grupo.Etário` %in% categorias_2023)
+
+# Calcular contagem e rácio para 2010-2019
+dados_2010_2019_racio <- dados_2010_2019 %>%
+  group_by(year, `Grupo.Etário`) %>%
+  summarise(
+    uso = sum(ifelse(`Acessórios.Condutores` %in% c("Capacete", "Cinto de segurança"), 1, 0)),
+    nao_uso = sum(ifelse(`Acessórios.Condutores` %in% c("Sem uso de capacete","Sem uso de cinto"), 1, 0)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    racio = nao_uso / (uso + nao_uso),
+    ano = as.character(year)
+  )
+
+# Adicionar dados agregados para 2010-2019
+dados_2010_2019_extra <- dados_2010_2019 %>%
+  group_by(`Grupo.Etário`) %>%
+  summarise(
+    uso = sum(ifelse(`Acessórios.Condutores` %in% c("Capacete", "Cinto de segurança"), 1, 0)),
+    nao_uso = sum(ifelse(`Acessórios.Condutores` %in% c("Sem uso de capacete","Sem uso de cinto"), 1, 0)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    ano = "2010-2019",
+    racio = nao_uso / (uso + nao_uso)
+  )
+
+# Calcular contagem e rácio para 2023
+dados_2023_racio <- dados_2023 %>%
+  group_by(year, `Grupo.Etário`) %>%
+  summarise(
+    uso = sum(ifelse(`Acessórios.Condutores` %in% c("Capacete", "Cinto de segurança"), 1, 0)),
+    nao_uso = sum(ifelse(`Acessórios.Condutores` %in% c("Sem uso de capacete","Sem uso de cinto"), 1, 0)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    racio = nao_uso / (uso + nao_uso),
+    ano = as.character(year)
+  )
+
+# Adicionar dados agregados para 2023
+dados_2023_extra <- dados_2023_racio %>%
+  group_by(`Grupo.Etário`) %>%
+  summarise(
+    uso = sum(uso, na.rm = TRUE),
+    nao_uso = sum(nao_uso, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    ano = "2023",
+    racio = nao_uso / (uso + nao_uso)
+  )
+
+# Combinar dados de 2010-2019 e 2023
+dados_combinados <- bind_rows(
+  dados_2010_2019_racio,
+  dados_2010_2019_extra,
+  dados_2023_racio,
+  dados_2023_extra
+)
+
+# Gráfico para 2010-2019 com anos individuais e agregado
+# Definir as cores para as categorias
+cores <- c(
+  "young" = "pink",
+  "adult" = "lightblue", 
+  "Senior" = "lightgreen")
+
+# Gráfico para 2010-2019 com anos individuais e agregado
+grafico_2010_2019 <- ggplot(
+  dados_combinados %>%
+    filter(as.numeric(year) >= 2010 & as.numeric(year) <= 2019 | ano == "2010-2019"), # Seleciona anos individuais e o agregado
+  aes(
+    x = factor(ifelse(ano == "2010-2019", ano, as.character(year)),  # Usa 'ano' para o agregado, 'year' para anos individuais
+               levels = c(as.character(2010:2019), "2010-2019")),    # Define a ordem dos níveis no eixo X
+    y = racio, 
+    color = `Grupo.Etário`, 
+    group = interaction(`Grupo.Etário`, ano)  # Agrupa pelas linhas de cada grupo e ano
+  )
+) +
+  geom_line(size = 1) +  # Linhas conectando pontos
+  geom_point(size = 2) + # Pontos para cada grupo etário
+  labs(
+    title = "Não uso p/ Grupo Etário (2010-2019)",
+    x = "Ano",
+    y = "Rácio (Não Uso / Total)",
+    color = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = cores)  # Definir as cores manuais
+
+# Gráfico para 2023
+grafico_2023 <- ggplot(dados_combinados %>% filter(ano == "2023"), 
+                       aes(x = ano, y = racio, color = `Grupo.Etário`, group = `Grupo.Etário`)) +
+  geom_point(size = 4) +
+  labs(
+    title = "Não uso p/ Grupo Etário (2023)",
+    x = "Ano",
+    y = "Rácio (Não Uso / Total)",
+    color = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = cores)  # Definir as cores manuais
+
+# Combinar os dois gráficos lado a lado
+grafico_combinado <- grafico_2010_2019 + grafico_2023 + plot_layout(ncol = 2)
+
+# Exibir o gráfico combinado
+print(grafico_combinado)
+```
+
+###### Grupo etário por periodo do dia
+
+```{r}
+# Filtrando dados para 2010-2019, excluindo "normal" da época e garantindo que 'ano' exista
+dados_2010_2019 <- dados_2010_2019 %>%
+  filter(`época` != "normal", !is.na(ano))  # Garantir que 'ano' não seja NA
+
+dados_2023 <- dados_2023 %>%
+  filter(`época` != "normal", !is.na(ano))
+
+# Combinar dados de 2010-2019 e 2023 em um único dataframe
+dados_combinados <- bind_rows(dados_2010_2019, dados_2023)
+
+# Filtrar dados para os anos de 2010 a 2019, excluindo os grupos "Criança" e "Adolescente"
+dados_2010_2019 <- dados_combinados %>%
+  filter(year >= 2010 & year <= 2019, !is.na(`Grupo.Etário`))
+
+# Filtrar dados para 2023, excluindo os grupos "Criança" e "Adolescente"
+dados_2023 <- dados_combinados %>%
+  filter(ano == 2023, !is.na(`Grupo.Etário`))
+
+# Criar a coluna 'periodo_dia' em ambos os dataframes (2010-2019 e 2023)
+dados_2010_2019 <- dados_2010_2019 %>%
+  mutate(periodo_dia = factor(periodo_dia, levels = c(
+    "ponta início do dia", "manhã", "horas de almoço", 
+    "tarde", "ponta final do dia", "noite", "madrugada"
+  )))
+
+dados_2023 <- dados_2023 %>%
+  mutate(periodo_dia = factor(periodo_dia, levels = c(
+    "ponta início do dia", "manhã", "horas de almoço", 
+    "tarde", "ponta final do dia", "noite", "madrugada"
+  )))
+
+# Calcular a quantidade de acidentes por grupo etário e período do dia para 2010-2019 (agregado)
+acidentes_2010_2019 <- dados_2010_2019 %>%
+  group_by(periodo_dia, `Grupo.Etário`) %>%
+  tally() %>%
+  ungroup() %>%
+  group_by(periodo_dia) %>%
+  mutate(percentagem = n / sum(n) * 100)  # Calcular a percentagem
+
+# Calcular a quantidade de acidentes por grupo etário e período do dia para 2023
+acidentes_2023 <- dados_2023 %>%
+  group_by(periodo_dia, `Grupo.Etário`) %>%
+  tally() %>%
+  ungroup() %>%
+  group_by(periodo_dia) %>%
+  mutate(percentagem = n / sum(n) * 100)  # Calcular a percentagem
+
+# Gráfico de barras empilhadas para 2010-2019 (dados agregados por grupo etário e por período do dia)
+grafico_barras_2010_2019 <- ggplot(acidentes_2010_2019, aes(x = periodo_dia, y = percentagem, fill = `Grupo.Etário`, label = round(percentagem, 1))) +
+  geom_bar(stat = "identity") +
+  geom_text(position = position_stack(vjust = 0.5)) +  # Coloca os valores dentro das barras
+  labs(
+    title = "Percentagem Acidentes Condutores por Grupo Etário e Período do dia (2010-2019)",
+    x = "Período do Dia",
+    y = "Percentagem de Acidentes (%)",
+    fill = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_blank(),  # Remove os valores do eixo Y
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Gráfico de barras empilhadas para 2023 (dados agregados por grupo etário e por período do dia)
+grafico_barras_2023 <- ggplot(acidentes_2023, aes(x = periodo_dia, y = percentagem, fill = `Grupo.Etário`, label = round(percentagem, 1))) +
+  geom_bar(stat = "identity") +
+  geom_text(position = position_stack(vjust = 0.5)) +  # Coloca os valores dentro das barras
+  labs(
+    title = "Percentagem Acidentes Condutores por Grupo Etário e Período do dia (2023)",
+    x = "Período do Dia",
+    y = "Percentagem de Acidentes (%)",
+    fill = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_blank(),  # Remove os valores do eixo Y
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Exibir os gráficos
+print(grafico_barras_2010_2019)
+print(grafico_barras_2023)
+
+
+library(dplyr)
+library(ggplot2)
+
+# Para 2010-2019
+# Calcular a percentagem de acidentes por período do dia para cada grupo etário
+acidentes_2010_2019_percentagem <- acidentes_2010_2019 %>%
+  group_by(Grupo.Etário, periodo_dia) %>%
+  summarise(total_acidentes = sum(percentagem)) %>%
+  group_by(Grupo.Etário) %>%
+  mutate(percentagem = total_acidentes / sum(total_acidentes) * 100)
+
+# Gráfico para 2010-2019
+grafico_barras_grupo_2010_2019 <- ggplot(acidentes_2010_2019_percentagem, aes(x = `Grupo.Etário`, y = percentagem, fill = periodo_dia, label = round(percentagem, 1))) +
+  geom_bar(stat = "identity", position = "stack") +  # Barras empilhadas
+  geom_text(position = position_stack(vjust = 0.3), size = 2.9) +  # Percentagens dentro das barras
+  labs(
+    title = "Distribuição Percentual Acidentes p/ Período Dia e Grupo Etário (2010-2019)",
+    x = "Grupo Etário",
+    y = "Percentagem de Acidentes (%)",
+    fill = "Período do Dia"
+  ) +
+  coord_flip() +
+  theme(
+    axis.text.y = element_text(angle = 45, hjust = 1),
+    axis.text.x = element_blank(),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Para 2023
+# Calcular a percentagem de acidentes por período do dia para cada grupo etário
+acidentes_2023_percentagem <- acidentes_2023 %>%
+  group_by(Grupo.Etário, periodo_dia) %>%
+  summarise(total_acidentes = sum(percentagem)) %>%
+  group_by(Grupo.Etário) %>%
+  mutate(percentagem = total_acidentes / sum(total_acidentes) * 100)
+
+# Gráfico para 2023
+grafico_barras_grupo_2023 <- ggplot(acidentes_2023_percentagem, aes(x = `Grupo.Etário`, y = percentagem, fill = periodo_dia, label = round(percentagem, 1))) +
+  geom_bar(stat = "identity", position = "stack") +  # Barras empilhadas
+  geom_text(position = position_stack(vjust = 0.3), size = 2.9) +  # Percentagens dentro das barras
+  labs(
+    title = "Distribuição Percentual Acidentes p/ Período Dia e Grupo Etário (2023)",
+    x = "Grupo Etário",
+    y = "Percentagem de Acidentes (%)",
+    fill = "Período do Dia"
+  ) +
+  coord_flip() +
+  theme(
+    axis.text.y = element_text(angle = 45, hjust = 1),
+    axis.text.x = element_blank(),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Exibir os gráficos
+print(grafico_barras_grupo_2010_2019)
+print(grafico_barras_grupo_2023)
+
+```
+
+###### Dispositivos de segurança por periodo do dia
+
+```{r}
+##### Tabela Rácio de uso e não uso de dispositivos por período do dia e ano #####
+# Calcular o total de uso e não uso de dispositivos por período do dia e ano
+dados_racio <- dados_combinados %>%
+  mutate(
+    year = as.character(year),  # Converte year para tipo character
+    year = ifelse(is.na(year), '2023', year),  # Substitui NA por '2023'
+    periodo_dia = factor(periodo_dia, levels = c(
+      "ponta início do dia", "manhã", "horas de almoço", 
+      "tarde", "ponta final do dia", "noite", "madrugada"  # Ordem desejada
+    ))
+  ) %>%
+  group_by(periodo_dia, year, `Acessórios.Condutores`) %>%
+  summarise(contagem = n(), .groups = "drop") %>%
+  # Calcular o total de ocorrências de uso e não uso por período do dia (por ano)
+  group_by(periodo_dia, year) %>%
+  mutate(
+    uso = sum(ifelse(`Acessórios.Condutores` %in% c("Capacete", "Cinto de Segurança"), contagem, 0)),  # Total de uso de dispositivos
+    nao_uso = sum(ifelse(`Acessórios.Condutores` == "Sem uso de cinto/capacete", contagem, 0))  # Total de não uso de dispositivos
+  ) %>%
+  ungroup() %>%
+  # Calcular o rácio: Não uso / Uso
+  mutate(
+    racio = ifelse(uso > 0, nao_uso / uso, NA)  # Evitar divisão por zero
+  ) %>%
+  select(year, periodo_dia, racio)
+
+# Agregar valores duplicados (se necessário)
+dados_racio <- dados_racio %>%
+  group_by(periodo_dia, year) %>%
+  summarise(racio = mean(racio, na.rm = TRUE), .groups = "drop")
+
+# Organizar a tabela com anos como colunas usando pivot_wider
+dados_racio_tabela <- dados_racio %>%
+  pivot_wider(names_from = year, values_from = racio)
+
+# Exibir a tabela resultante
+print(dados_racio_tabela)
+
+# Transformando a tabela para formato longo
+dados_racio_long <- dados_racio_tabela %>%
+  gather(key = "ano", value = "racio", -periodo_dia)  # Colocando os anos em uma coluna
+
+# Calcular o rácio máximo para cada ano
+dados_racio_long <- dados_racio_long %>%
+  group_by(ano) %>%
+  mutate(max_racio = max(racio)) %>%
+  ungroup()
+
+# # Criar o histograma com barras sobrepostas, com transparência para as categorias não máximas
+# ggplot(dados_racio_long, aes(x = ano, y = racio, fill = periodo_dia)) +
+#   # Barras para os períodos do dia com rácio menor, mais transparentes
+#   geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.3) +
+#   # Barras para os períodos com o maior rácio por ano, mais destacadas
+#   geom_bar(data = dados_racio_long %>% filter(racio == max_racio), 
+#            stat = "identity", position = "dodge", aes(fill = periodo_dia), 
+#            color = "black", alpha = 1.0) +
+#   labs(
+#     title = "Histograma do Rácio de Não Uso / Uso de Dispositivos de Segurança por Ano e Período do Dia",
+#     x = "Ano",
+#     y = "Rácio (Não Uso / Uso)"
+#   ) +
+#   theme_minimal() +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     panel.grid.major.x = element_blank(),
+#     panel.grid.minor.x = element_blank()
+#   ) +
+#   scale_fill_brewer(palette = "Set3")  # Usando uma paleta de cores com diferentes tons para os períodos do dia
+
+#######Gráfico de linha##########################
+# Calcular o total de ocorrências e garantir que NA seja substituído corretamente por 2023
+dados_agregados <- dados_combinados %>%
+  mutate(
+    year = as.character(year),  # Converte year para tipo character
+    year = ifelse(is.na(year), '2023', year),  # Substitui NA por '2023'
+    periodo_dia = factor(periodo_dia, levels = c(
+      "ponta início do dia", "manhã", "horas de almoço", 
+      "tarde", "ponta final do dia", "noite", "madrugada"  # Ordem desejada
+    ))
+  ) %>%
+  group_by(periodo_dia, year, ano) %>%
+  summarise(contagem = n(), .groups = "drop") %>%
+  # Calcular o total de ocorrências por período do dia (considerando todos os anos)
+  group_by(periodo_dia) %>%
+  mutate(
+    total_periodo = sum(contagem),  # Total de ocorrências por período do dia (todos os anos)
+    freq_relativa = contagem / total_periodo  # Frequência relativa (contagem / total por período)
+  ) %>%
+  ungroup()  # Remover o agrupamento para evitar problemas posteriores
+
+# Calcular a média para os anos de 2010 a 2019
+dados_media_2010_2019 <- dados_agregados %>%
+  filter(year >= "2010" & year <= "2019") %>%
+  group_by(periodo_dia) %>%
+  summarise(
+    media_contagem = mean(contagem),
+    media_freq_relativa = mean(freq_relativa),
+    .groups = "drop"
+  )
+
+
+# Gráfico de linha para número de ocorrências (sem frequência relativa)
+grafico_ocorrencias <- ggplot() +
+  # Linhas individuais para os anos de 2010 a 2019
+  geom_line(
+    data = subset(dados_agregados, year >= "2010" & year <= "2019"), 
+    aes(x = periodo_dia, y = contagem, color = factor(year), group = year),
+    size = 0.8, alpha = 0.3  # Aumentando a transparência para os anos de 2010-2019
+  ) +
+  # Linha para 2023
+  geom_line(
+    data = subset(dados_agregados, year == "2023"),  # Garantindo que 2023 seja corretamente filtrado
+    aes(x = periodo_dia, y = contagem, color = "2023", group = 1),
+    size = 1.2
+  ) +
+  # Bolinhas para os anos de 2010 a 2019 (com suas cores respectivas e mais transparentes)
+  geom_point(
+    data = dados_agregados %>% filter(year >= "2010" & year <= "2019"), 
+    aes(x = periodo_dia, y = contagem, color = factor(year)),
+    size = 3, alpha = 0.3  # Transparência para os pontos de 2010-2019
+  ) +
+  # Média para os anos de 2010-2019 com bolinhas azuis sem transparência
+  geom_point(
+    data = dados_media_2010_2019,
+    aes(x = periodo_dia, y = media_contagem),
+    color = "blue", size = 4, alpha = 1  # Sem transparência para a média
+  ) +
+  # Linha conectando as bolinhas da média
+  geom_line(
+    data = dados_media_2010_2019,
+    aes(x = periodo_dia, y = media_contagem, group = 1),  # Garantir que todos os pontos sejam conectados
+    color = "blue", size = 1.2, linetype = "solid"  # Linha conectando as bolinhas da média
+  ) +
+  labs(
+    title = "Não Uso de Dispositivos de Segurança por Período do Dia (Contagem)",
+    x = "Período do Dia",
+    y = "Nº de Ocorrências",
+    color = "Ano"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.x = element_blank()
+  ) +
+  scale_x_discrete(drop = FALSE) +  # Garante todas as categorias no eixo X
+  scale_color_manual(values = c(
+    "2023" = "red",  # Cor para 2023 sem transparência
+    "2010" = "purple", "2011" = "green", "2012" = "orange",
+    "2013" = "cyan", "2014" = "pink", "2015" = "brown",
+    "2016" = "yellow", "2017" = "gray", "2018" = "darkgreen",
+    "2019" = "darkblue"
+  ))
+
+# Gráfico de linha para a frequência relativa
+grafico_freq_relativa <- ggplot() +
+  # Linhas individuais para os anos de 2010 a 2019
+  geom_line(
+    data = subset(dados_agregados, year >= "2010" & year <= "2019"), 
+    aes(x = periodo_dia, y = freq_relativa, color = factor(year), group = year),
+    size = 0.8, alpha = 0.3  # Aumentando a transparência para os anos de 2010-2019
+  ) +
+  # Linha para 2023
+  geom_line(
+    data = subset(dados_agregados, year == "2023"),  # Garantindo que 2023 seja corretamente filtrado
+    aes(x = periodo_dia, y = freq_relativa, color = "2023", group = 1),
+    size = 1.2
+  ) +
+  # Calculando a média para os anos de 2010 a 2019
+  geom_line(
+    data = dados_agregados %>% filter(year >= "2010" & year <= "2019") %>%
+      group_by(periodo_dia) %>%
+      summarise(freq_relativa_media = mean(freq_relativa, na.rm = TRUE)),  # Calculando a média
+    aes(x = periodo_dia, y = freq_relativa_media, group = 1, color = "2010-2019"),
+    size = 1.2  # Linha contínua para a média
+  ) +
+  labs(
+    title = "Não Uso de Dispositivos de Segurança por Período do Dia (Frequências Relativas)",
+    x = "Período do Dia",
+    y = "Frequência Relativa",
+    color = "Ano"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.x = element_blank()
+  ) +
+  scale_x_discrete(drop = FALSE) +  # Garante todas as categorias no eixo X
+  scale_color_manual(values = c(
+    "2023" = "red",  # Cor para 2023 sem transparência
+    "2010-2019" = "blue",  # Linha azul para o intervalo de 2010 a 2019
+    "2010" = "purple", "2011" = "green", "2012" = "orange",
+    "2013" = "cyan", "2014" = "pink", "2015" = "brown",
+    "2016" = "yellow", "2017" = "gray", "2018" = "darkgreen",
+    "2019" = "darkblue"
+  ))
+
+
+# Exibir os dois gráficos
+plot(grafico_ocorrencias)
+plot(grafico_freq_relativa)
+```
+
+#### Dispositivo de segurança e a faixa etária por **época**
+
+##### Para Condutores 2010-2019 e 2023
+
+###### Grupo etário por época
+
+```{r}
+# Filtrar dados para os anos de 2010 a 2019, excluindo os grupos "Criança", "Adolescente" e a época "normal"
+dados_2010_2019 <- dados_combinados %>%
+  filter(year >= 2010 & year <= 2019, !is.na(`Grupo.Etário`), 
+         !época %in% c("normal"))
+
+# Filtrar dados para 2023, excluindo os grupos "Criança", "Adolescente" e a época "normal"
+dados_2023 <- dados_combinados %>%
+  filter(ano == 2023, !is.na(`Grupo.Etário`), 
+         !época %in% c("normal"))
+
+# Definir a ordem das épocas (caso necessário)
+dados_2010_2019$época <- factor(dados_2010_2019$época, levels = c("carnaval", "páscoa","verão", "peregrinação fátima", "natal e ano novo"))  # Substitua pelos nomes reais das épocas
+dados_2023$época <- factor(dados_2023$época, levels = c("carnaval", "páscoa","verão", "peregrinação fátima", "natal e ano novo"))  # Substitua pelos nomes reais das épocas
+
+# Calcular a quantidade de acidentes por grupo etário e época para 2010-2019 (agregado)
+acidentes_2010_2019 <- dados_2010_2019 %>%
+  group_by(época, `Grupo.Etário`) %>%
+  tally() %>%
+  ungroup() %>%
+  group_by(época) %>%
+  mutate(percentagem = n / sum(n) * 100)  # Calcular a percentagem
+
+# Calcular a quantidade de acidentes por grupo etário e época para 2023
+acidentes_2023 <- dados_2023 %>%
+  group_by(época, `Grupo.Etário`) %>%
+  tally() %>%
+  ungroup() %>%
+  group_by(época) %>%
+  mutate(percentagem = n / sum(n) * 100)  # Calcular a percentagem
+
+# Gráfico de barras empilhadas para 2010-2019 (dados agregados por grupo etário e por época)
+grafico_barras_2010_2019 <- ggplot(acidentes_2010_2019, aes(x = época, y = percentagem, fill = `Grupo.Etário`, label = round(percentagem, 1))) +
+  geom_bar(stat = "identity") +
+  geom_text(position = position_stack(vjust = 0.5)) +  # Coloca os valores dentro das barras
+  labs(
+    title = "Percentagem de Acidentes por Grupo Etário (2010-2019)",
+    x = "Época",
+    y = "Percentagem de Acidentes (%)",
+    fill = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_blank(),  # Remove os valores do eixo Y
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Gráfico de barras empilhadas para 2023 (dados agregados por grupo etário e por época)
+grafico_barras_2023 <- ggplot(acidentes_2023, aes(x = época, y = percentagem, fill = `Grupo.Etário`, label = round(percentagem, 1))) +
+  geom_bar(stat = "identity") +
+  geom_text(position = position_stack(vjust = 0.5)) +  # Coloca os valores dentro das barras
+  labs(
+    title = "Percentagem de Acidentes por Grupo Etário e Época (2023)",
+    x = "Época",
+    y = "Percentagem de Acidentes (%)",
+    fill = "Grupo Etário"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_blank(),  # Remove os valores do eixo Y
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Exibir os gráficos
+print(grafico_barras_2010_2019)
+print(grafico_barras_2023)
+
+# Para 2010-2019
+# Calcular a percentagem de acidentes por época para cada grupo etário
+acidentes_2010_2019_percentagem <- acidentes_2010_2019 %>%
+  group_by(Grupo.Etário, `época`) %>%
+  summarise(total_acidentes = sum(percentagem)) %>%
+  group_by(Grupo.Etário) %>%
+  mutate(percentagem = total_acidentes / sum(total_acidentes) * 100)
+
+# Gráfico para 2010-2019
+grafico_barras_grupo_2010_2019 <- ggplot(acidentes_2010_2019_percentagem, aes(x = `Grupo.Etário`, y = percentagem, fill = `época`, label = round(percentagem, 1))) +
+  geom_bar(stat = "identity", position = "stack") +  # Barras empilhadas
+  geom_text(position = position_stack(vjust = 0.3), size = 2.9) +  # Percentagens dentro das barras
+  labs(
+    title = "Distribuição Percentual Acidentes p/ Época e Grupo Etário (2010-2019)",
+    x = "Grupo Etário",
+    y = "Percentagem de Acidentes (%)",
+    fill = "Época"
+  ) +
+  coord_flip() +
+  theme(
+    axis.text.y = element_text(angle = 45, hjust = 1),
+    axis.text.x = element_blank(),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Para 2023
+# Calcular a percentagem de acidentes por época para cada grupo etário
+acidentes_2023_percentagem <- acidentes_2023 %>%
+  group_by(Grupo.Etário, `época`) %>%
+  summarise(total_acidentes = sum(percentagem)) %>%
+  group_by(Grupo.Etário) %>%
+  mutate(percentagem = total_acidentes / sum(total_acidentes) * 100)
+
+# Gráfico para 2023
+grafico_barras_grupo_2023 <- ggplot(acidentes_2023_percentagem, aes(x = `Grupo.Etário`, y = percentagem, fill = `época`, label = round(percentagem, 1))) +
+  geom_bar(stat = "identity", position = "stack") +  # Barras empilhadas
+  geom_text(position = position_stack(vjust = 0.3), size = 2.9) +  # Percentagens dentro das barras
+  labs(
+    title = "Distribuição Percentual Acidentes p/ Época e Grupo Etário (2023)",
+    x = "Grupo Etário",
+    y = "Percentagem de Acidentes (%)",
+    fill = "Época"
+  ) +
+  coord_flip() +
+  theme(
+    axis.text.y = element_text(angle = 45, hjust = 1),
+    axis.text.x = element_blank(),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Exibir os gráficos
+print(grafico_barras_grupo_2010_2019)
+print(grafico_barras_grupo_2023)
+
+```
+
+###### Dispositivos por época (gráficos semelhantes aos do periodo do dia)
+
+```{r}
+##### Tabela Rácio de uso e não uso de dispositivos por época e ano #####
+# Calcular o total de uso e não uso de dispositivos por época e ano
+dados_racio <- dados_combinados %>%
+  mutate(
+    year = as.character(year),  # Converte year para tipo character
+    year = ifelse(is.na(year), '2023', year),  # Substitui NA por '2023'
+    época = factor(época, levels = c("carnaval", "páscoa","verão", "peregrinação fátima", "natal e ano novo"))
+  ) %>%
+  filter(época != "normal") %>%  # Filtra a categoria 'normal'
+  group_by(época, year, `Acessórios.Condutores`) %>%
+  summarise(contagem = n(), .groups = "drop") %>%
+  # Calcular o total de ocorrências de uso e não uso por época (por ano)
+  group_by(época, year) %>%
+  mutate(
+    uso = sum(ifelse(`Acessórios.Condutores` %in% c("Capacete", "Cinto de Segurança"), contagem, 0)),  # Total de uso de dispositivos
+    nao_uso = sum(ifelse(`Acessórios.Condutores` == "Sem uso de cinto/capacete", contagem, 0))  # Total de não uso de dispositivos
+  ) %>%
+  ungroup() %>%
+  # Calcular o rácio: Não uso / Uso
+  mutate(
+    racio = ifelse(uso > 0, nao_uso / uso, NA)  # Evitar divisão por zero
+  ) %>%
+  select(year, época, racio)
+
+# Agregar valores duplicados (se necessário)
+dados_racio <- dados_racio %>%
+  group_by(época, year) %>%
+  summarise(racio = mean(racio, na.rm = TRUE), .groups = "drop")
+
+# Organizar a tabela com anos como colunas usando pivot_wider
+dados_racio_tabela <- dados_racio %>%
+  pivot_wider(names_from = year, values_from = racio)
+
+# Exibir a tabela resultante
+print(dados_racio_tabela)
+
+# Transformando a tabela para formato longo
+dados_racio_long <- dados_racio_tabela %>%
+  gather(key = "ano", value = "racio", -época)  # Colocando os anos em uma coluna
+
+# Calcular o rácio máximo para cada ano
+dados_racio_long <- dados_racio_long %>%
+  group_by(ano) %>%
+  mutate(max_racio = max(racio)) %>%
+  ungroup()
+
+# # Criar o histograma com barras sobrepostas, com transparência para as categorias não máximas
+# ggplot(dados_racio_long, aes(x = ano, y = racio, fill = época)) +
+#   # Barras para as épocas com rácio menor, mais transparentes
+#   geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.3) +
+#   # Barras para as épocas com o maior rácio por ano, mais destacadas
+#   geom_bar(data = dados_racio_long %>% filter(racio == max_racio), 
+#            stat = "identity", position = "dodge", aes(fill = época), 
+#            color = "black", alpha = 1.0) +
+#   labs(
+#     title = "Histograma do Rácio de Não Uso / Uso de Dispositivos de Segurança por Ano e Época",
+#     x = "Ano",
+#     y = "Rácio (Não Uso / Uso)"
+#   ) +
+#   theme_minimal() +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     panel.grid.major.x = element_blank(),
+#     panel.grid.minor.x = element_blank()
+#   ) +
+#   scale_fill_brewer(palette = "Set3")  # Usando uma paleta de cores com diferentes tons para as épocas
+
+#######Gráfico de linha##########################
+# Calcular o total de ocorrências e garantir que NA seja substituído corretamente por 2023
+dados_agregados <- dados_combinados %>%
+  mutate(
+    year = as.character(year),  # Converte year para tipo character
+    year = ifelse(is.na(year), '2023', year),  # Substitui NA por '2023'
+    época = factor(época, levels = c("carnaval", "páscoa","verão", "peregrinação fátima", "natal e ano novo"))
+  ) %>%
+  filter(época != "normal") %>%  # Filtra a categoria 'normal'
+  group_by(época, year, ano) %>%
+  summarise(contagem = n(), .groups = "drop") %>%
+  # Calcular o total de ocorrências por época (considerando todos os anos)
+  group_by(época) %>%
+  mutate(
+    total_época = sum(contagem),  # Total de ocorrências por época (todos os anos)
+    freq_relativa = contagem / total_época  # Frequência relativa (contagem / total por época)
+  ) %>%
+  ungroup()  # Remover o agrupamento para evitar problemas posteriores
+
+# Calcular a média para os anos de 2010 a 2019
+dados_media_2010_2019 <- dados_agregados %>%
+  filter(year >= "2010" & year <= "2019") %>%
+  group_by(época) %>%
+  summarise(
+    media_contagem = mean(contagem),
+    media_freq_relativa = mean(freq_relativa),
+    .groups = "drop"
+  )
+
+# Gráfico de linha para número de ocorrências (sem frequência relativa)
+grafico_ocorrencias <- ggplot() +
+  # Linhas individuais para os anos de 2010 a 2019
+  geom_line(
+    data = subset(dados_agregados, year >= "2010" & year <= "2019"), 
+    aes(x = época, y = contagem, color = factor(year), group = year),
+    size = 0.8, alpha = 0.3  # Aumentando a transparência para os anos de 2010-2019
+  ) +
+  # Linha para 2023
+  geom_line(
+    data = subset(dados_agregados, year == "2023"),  # Garantindo que 2023 seja corretamente filtrado
+    aes(x = época, y = contagem, color = "2023", group = 1),
+    size = 1.2
+  ) +
+  # Bolinhas para os anos de 2010 a 2019 (com suas cores respectivas e mais transparentes)
+  geom_point(
+    data = dados_agregados %>% filter(year >= "2010" & year <= "2019"), 
+    aes(x = época, y = contagem, color = factor(year)),
+    size = 3, alpha = 0.3  # Transparência para os pontos de 2010-2019
+  ) +
+  # Média para os anos de 2010-2019 com bolinhas azuis sem transparência
+  geom_point(
+    data = dados_media_2010_2019,
+    aes(x = época, y = media_contagem),
+    color = "blue", size = 4, alpha = 1  # Sem transparência para a média
+  ) +
+  # Linha conectando as bolinhas da média
+  geom_line(
+    data = dados_media_2010_2019,
+    aes(x = época, y = media_contagem, group = 1),  # Garantir que todos os pontos sejam conectados
+    color = "blue", size = 1.2, linetype = "solid"  # Linha conectando as bolinhas da média
+  ) +
+  labs(
+    title = "Não Uso de Dispositivos de Segurança por Época do Ano (Contagem)",
+    x = "Época do Ano",
+    y = "Nº de Ocorrências",
+    color = "Ano"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.x = element_blank()
+  ) +
+  scale_x_discrete(drop = FALSE) +  # Garante todas as categorias no eixo X
+  scale_color_manual(values = c(
+    "2023" = "red",  # Cor para 2023 sem transparência
+    "2010" = "purple", "2011" = "green", "2012" = "orange",
+    "2013" = "cyan", "2014" = "pink", "2015" = "brown",
+    "2016" = "yellow", "2017" = "gray", "2018" = "darkgreen",
+    "2019" = "darkblue"
+  ))
+
+# Gráfico de linha para a frequência relativa
+grafico_freq_relativa <- ggplot() +
+  # Linhas individuais para os anos de 2010 a 2019
+  geom_line(
+    data = subset(dados_agregados, year >= "2010" & year <= "2019"), 
+    aes(x = época, y = freq_relativa, color = factor(year), group = year),
+    size = 0.8, alpha = 0.3  # Aumentando a transparência para os anos de 2010-2019
+  ) +
+  # Linha para 2023
+  geom_line(
+    data = subset(dados_agregados, year == "2023"),  # Garantindo que 2023 seja corretamente filtrado
+    aes(x = época, y = freq_relativa, color = "2023", group = 1),
+    size = 1.2
+  ) +
+  # Calculando a média para os anos de 2010 a 2019
+  geom_line(
+    data = dados_agregados %>% filter(year >= "2010" & year <= "2019") %>%
+      group_by(época) %>%
+      summarise(freq_relativa_media = mean(freq_relativa, na.rm = TRUE)),  # Calculando a média
+    aes(x = época, y = freq_relativa_media, group = 1, color = "2010-2019"),
+    size = 1.2  # Linha contínua para a média
+  ) +
+  labs(
+    title = "Não Uso de Dispositivos de Segurança por Época do Ano (Frequências Relativas)",
+    x = "Período do Dia",
+    y = "Frequência Relativa",
+    color = "Ano"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.x = element_blank()
+  ) +
+  scale_x_discrete(drop = FALSE) +  # Garante todas as categorias no eixo X
+  scale_color_manual(values = c(
+    "2023" = "red",  # Cor para 2023 sem transparência
+    "2010-2019" = "blue",  # Linha azul para o intervalo de 2010 a 2019
+    "2010" = "purple", "2011" = "green", "2012" = "orange",
+    "2013" = "cyan", "2014" = "pink", "2015" = "brown",
+    "2016" = "yellow", "2017" = "gray", "2018" = "darkgreen",
+    "2019" = "darkblue"
+  ))
+
+
+# Exibir o gráfico de frequência relativa
+plot(grafico_ocorrencias)
+plot(grafico_freq_relativa)
+```
