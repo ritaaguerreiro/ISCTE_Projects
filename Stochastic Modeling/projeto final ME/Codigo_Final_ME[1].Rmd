@@ -1,0 +1,771 @@
+---
+title: "Trabalho Final - Modelação Estocástica"
+author:
+- Ana Sofia Almeida nº111658
+- Filipe Duarte nº104646
+- Miguel Celestino nº111590
+- Rita Guerreiro nº112018
+date: "2024-10-30"
+output: pdf_document
+---
+
+```{r}
+#Bibliotecas
+library(simmer)
+library(simmer.plot)
+library(stringr)
+library(dplyr)
+```
+
+##Cenário 1: O centro tem 2 guichets abertos durante o período das 4 horas em que atende os clientes presenciais e as chamadas telefónicas 
+
+```{r include=FALSE}
+set.seed(2024)
+
+cliente_balcao <- trajectory("balcao path") %>%
+  #log_("Cheguei (balcao)") %>%
+  seize("guichet", 1) %>%
+  #log_("Fui atendido (balcao)") %>%
+  timeout(function()  rlnorm(1, meanlog = log(1.5), sdlog = log(3.5))) %>% release("guichet", 1) #%>%
+#log_("Vou embora, estou despachado! (balcao)")
+
+cliente_telefone <- trajectory("telefone path") %>%
+  #log_("Liguei (telefone)") %>%
+  seize("guichet", 1) %>%
+  #log_("Fui atendido (telefone)") %>%
+  timeout(function() rlnorm(1, meanlog = 4*log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) # %>%
+  #log_("Desliguei, estou despachado! (telefone)")
+
+
+clinica_1 <- lapply(1:100, function(i) {
+  simmer("Clinica de exames médicos - cenário 1") %>%
+  add_resource("guichet", 2) %>%
+  add_generator("cliente balcao", cliente_balcao, function() rexp(1, 1/15)) %>%
+  add_generator("cliente telefone", cliente_telefone, function() rexp(1, 1/5)) %>%
+  run(240)
+})
+
+```
+
+###Estatísticas Cenário 1
+
+```{r}
+#Analisar a média e mediana de tempo de espera no geral, ao telefone e ao balcão
+time1 <- clinica_1 %>%
+  get_mon_arrivals() %>%
+  transform(waiting_time = end_time - start_time - activity_time)
+#time1
+
+tempo_medio_total1 <- mean(time1$waiting_time)
+tempo_mediano_total1 <- median(time1$waiting_time)
+cat('Tempo médio de espera na fila entre todos os clientes: ', tempo_medio_total1, "\n")
+cat('Tempo mediano de espera na fila entre todos os clientes: ', tempo_mediano_total1, "\n")
+
+time_telefone1 <- data.frame()
+for (i in 1:nrow(time1)){
+  if (str_detect(time1$name[i], "cliente telefone")){
+    time_telefone1 <- rbind(time_telefone1, time1[i,])
+  }
+}
+
+tempo_medio_telefone1 <- mean(time_telefone1$waiting_time)
+tempo_mediano_telefone1 <- median(time_telefone1$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao telefone: ", tempo_medio_telefone1, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao telefone: ', tempo_mediano_telefone1, "\n")
+
+time_balcao1 <- anti_join(time1, time_telefone1)
+tempo_medio_balcao1 <- mean(time_balcao1$waiting_time)
+tempo_mediano_balcao1 <- median(time_balcao1$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao balcão: ", tempo_medio_balcao1, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao balcão: ', tempo_mediano_balcao1, "\n")
+
+
+resources <- get_mon_resources(clinica_1)
+
+#Utilização dos guichets ao longo do tempo
+plot(resources, metric = "usage", items = "server") 
+
+#Quantos clientes estão na fila ao longo do tempo
+plot(resources,metric="usage", item="queue")
+
+
+arrivals <- get_mon_arrivals(clinica_1)
+
+#Tempo total de permanência no sistema 
+plot(arrivals, metric = "flow_time")   
+
+
+```
+Observações:
+- O tempo de espera em fila pelos clientes é bastante elevado. Em média, nas 100 simulações, o tempo de espera é de 20 min. No entanto a mediana é de 11 min de espera, para o geral e ambos os clientes ao balcão e por telefone. O valor de média parece ser muito enviesado pelos outliers.
+- A partir dos 50 min os guichets parecem estar ambos bastante ocupados, permanecendo assim até ao final das 4h.
+- A dimensão da fila mostra uma tendência para aumentar até ao final da simulação.
+- Sobre o tempo de permanência no sistema, também apresenta uma tendência para aumentar ao longo da simulação, em média. No final das 4h, a média de tempo em permanência no sistema ultrapassa ligeiramente os 50 min.
+
+
+## Cenário 2: O centro tem 2 guichets abertos durante as 4 horas em que atende os clientes presenciais e as chamadas telefónicas. 
+- As chamadas têm prioridade para que não sejam perdidas. 
+- A chamada fica em espera até que o operador esteja disponível para a atender. Ao ficar disponível, este atende a chamada mesmo que o cliente tenha chegado primeiro. 
+
+```{r include=FALSE}
+set.seed(2024)
+
+cliente_balcao <- trajectory("balcao path") %>%
+  #log_("Cheguei (balcao)") %>%
+  seize("guichet", 1) %>%
+  #log_("Fui atendido (balcao)") %>%
+  timeout(function()  rlnorm(1, meanlog = log(1.5), sdlog = log(3.5))) %>% release("guichet", 1) # %>%
+#log_("Vou embora, estou despachado! (balcao)")
+
+cliente_telefone <- trajectory("telefone path") %>%
+  #log_("Liguei (telefone)") %>%
+  seize("guichet", 1) %>%
+  #log_("Fui atendido (telefone)") %>%
+  timeout(function() rlnorm(1, meanlog = 4*log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) #%>%
+  #log_("Desliguei, estou despachado! (telefone)")
+
+clinica_2 <- lapply(1:100, function(i) {
+  simmer("Clinica de exames médicos - cenário 2") %>%
+  add_resource("guichet", 2) %>%
+  add_generator("cliente balcao", cliente_balcao, function() rexp(1, 1/15)) %>%
+  add_generator("cliente telefone", cliente_telefone, function() rexp(1, 1/5), priority=1) %>%
+  run(240)
+})
+
+```
+
+### Estatísticas Cenário 2
+
+```{r}
+#Analisar a média e mediana de tempo de espera no geral, ao telefone e ao balcão
+time2 <- clinica_2 %>%
+  get_mon_arrivals() %>%
+  transform(waiting_time = end_time - start_time - activity_time)
+#time2
+
+tempo_medio_total2 <- mean(time2$waiting_time)
+tempo_mediano_total2 <- median(time2$waiting_time)
+#cat('Tempo médio de espera na fila entre todos os clientes: ', tempo_medio_total2, "\n")
+#cat('Tempo mediano de espera na fila entre todos os clientes: ', tempo_mediano_total2, "\n")
+
+
+time_telefone2 <- data.frame()
+for (i in 1:nrow(time2)){
+  if (str_detect(time2$name[i], "cliente telefone")){
+    time_telefone2 <- rbind(time_telefone2, time2[i,])
+  }
+}
+
+tempo_medio_telefone2 <- mean(time_telefone2$waiting_time)
+tempo_mediano_telefone2 <- median(time_telefone2$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao telefone: ", tempo_medio_telefone2, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao telefone: ', tempo_mediano_telefone2, "\n")
+
+time_balcao2 <- anti_join(time2, time_telefone2)
+tempo_medio_balcao2 <- mean(time_balcao2$waiting_time)
+tempo_mediano_balcao2 <- median(time_balcao2$waiting_time)
+cat("Tempo médio de espera na fila entre os clientes ao balcão: ", tempo_medio_balcao2, "\n")
+cat('Tempo mediano de espera na fila entre os clientes ao balcão: ', tempo_mediano_balcao2, "\n")
+
+
+resources_2 <- get_mon_resources(clinica_2)
+
+#Utilização dos guichets ao longo do tempo
+plot(resources_2, metric = "usage", items = "server")
+
+#Quantos clientes estão na fila ao longo do tempo
+plot(resources_2,metric="usage", item="queue") 
+
+
+arrivals_2 <- get_mon_arrivals(clinica_2)
+
+#Tempo total de permanência no sistema
+plot(arrivals_2, metric = "flow_time")   
+
+```
+Observações:
+- O tempo de espera dos clientes no geral, diminui ligeiramente para 6 min na mediana, no entanto o tempo de espera dos clientes em telefone é um pouco mais elevado, demorando 9 min em mediana para ser atendido o telefone em espera. Sobre o tempo de espera em balcão, a mediana diminuiu bastante, apresentando até agora os melhores valores de espera, no entanto a média permanece ainda muito elevada, o que implica a existência de outliers muito elevados.
+- Parece a haver uma ligeira tendência de menos ocupação dos recursos também. Também na dimensão da fila, parece haver ligeiras melhorias, sendo que a densidade de valores se concentra um pouco mais em baixo do que no gráfico anterior.
+- O tempo de permanência no sistema também mostra um ligeiro melhoramento, sendo que agora, no final das 4h, apresenta valores ligeiramente abaixo dos 50 min.
+
+
+## Cenário 3:  Considerando o cenário 2, mas com a alteração da chamada não ficar em fila de espera, e ser imediatamente atendida. Se o operador estiver a atender um cliente presencialmente, interrompe esse atendimento, que será retomado após a chamada terminada
+
+```{r include=FALSE}
+set.seed(2024)
+
+cliente_balcao <- trajectory("balcao path") %>%
+  #log_("Cheguei (balcao)") %>%
+  seize("guichet", 1) %>%
+  #log_("Fui atendido (balcao)") %>%
+  timeout(function()  rlnorm(1, meanlog = log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) #%>%
+  #log_("Vou embora, estou despachado! (balcao)")
+
+cliente_telefone <- trajectory("telefone path") %>%
+  #log_("Liguei (telefone)") %>%
+  seize("guichet", 1) %>%
+  #log_("Fui atendido (telefone)") %>%
+  timeout(function() rlnorm(1, meanlog = 4*log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) # %>%
+  #log_("Desliguei, estou despachado! (telefone)")
+
+
+clinica_3 <- lapply(1:100, function(i) {
+  simmer("Clinica de exames médicos - cenário 3") %>%
+  add_resource("guichet", 2, preemptive = TRUE) %>%
+  add_generator("cliente balcao", cliente_balcao, function() rexp(1, 1/15)) %>%
+  add_generator("cliente telefone", cliente_telefone, function() rexp(1, 1/5), priority=1) %>%
+  run(240)
+})
+
+```
+
+### Estatísticas Cenário 3
+
+```{r}
+#Analisar a média e mediana de tempo de espera no geral, ao telefone e ao balcão
+time3 <- clinica_3 %>%
+  get_mon_arrivals() %>%
+  transform(waiting_time = end_time - start_time - activity_time)
+#time3
+
+tempo_medio_total3 <- mean(time3$waiting_time)
+tempo_mediano_total3 <- median(time3$waiting_time)
+#cat('Tempo médio de espera na fila entre todos os clientes: ', tempo_medio_total3, "\n")
+#cat('Tempo mediano de espera na fila entre todos os clientes: ', tempo_mediano_total3, "\n")
+
+time_telefone3 <- data.frame()
+for (i in 1:nrow(time3)){
+  if (str_detect(time3$name[i], "cliente telefone")){
+    time_telefone3 <- rbind(time_telefone3, time3[i,])
+  }
+}
+
+tempo_medio_telefone3 <- mean(time_telefone3$waiting_time)
+tempo_mediano_telefone3 <- median(time_telefone3$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao telefone: ", tempo_medio_telefone3, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao telefone: ', tempo_mediano_telefone3, "\n")
+
+time_balcao3 <- anti_join(time3, time_telefone3)
+tempo_medio_balcao3 <- mean(time_balcao3$waiting_time)
+tempo_mediano_balcao3 <- median(time_balcao3$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao balcão: ", tempo_medio_balcao3, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao balcão: ', tempo_mediano_balcao3, "\n")
+
+resources_3 <- get_mon_resources(clinica_3)
+
+#Utilização dos guichets ao longo do tempo
+plot(resources_3, metric = "usage", items = "server") 
+
+#Quantos clientes estão na fila ao longo do tempo
+plot(resources_3,metric="usage", item="queue") #quantos clientes estão na fila ao longo do tempo
+
+
+arrivals_3 <- get_mon_arrivals(clinica_3)
+
+#Tempo total de permanência no sistema
+plot(arrivals_3, metric = "flow_time")  
+
+
+```
+
+- Os tempos de espera melhoram muito pouco relativamente ao cenário anterior, o que indica que não vale a pena defenir os clientes em telefone como urgentes prioritários. Isto é confirmado pelo tempo de permanência no sistema onde, no final da simulação encontra-se nos 50 min, ou seja, é superior ao cenário anterior. 
+- Os recursos também parecem ligeiramente mais sobrecarregados do que no cenário anterior.
+- Relativamente ao número de pessoas fila, parece também mais semelhante ao cenário 1, ou seja, não é muito boa.
+
+## Cenário 4: Considerando o cenário 2 com a alteração em que a chamada fica em fila de espera, mas após 10 minutos o sistema telefónico desliga a chamada, pelo que esse contacto é perdido. 
+
+```{r include=FALSE}
+set.seed(2024)
+
+cliente_balcao <- trajectory("balcao path") %>%
+  # log_("Cheguei (balcao)") %>%
+  seize("guichet", 1) %>%
+  # log_("Fui atendido (balcao)") %>%
+  timeout(function()  rlnorm(1, meanlog = log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) # %>%
+  # log_("Vou embora, estou despachado! (balcao)")
+
+cliente_telefone <- trajectory("telefone path") %>%
+  # log_("Liguei (telefone)") %>%
+  renege_in(10, out = trajectory("Reneging caller")) %>%
+        # log_("VOU DESLIGAR! Já passaram 10 min!! (telefone)")) %>%
+  seize("guichet", 1) %>%
+  # log_("Fui atendido (telefone)") %>%
+  renege_abort() %>%
+  timeout(function() rlnorm(1, meanlog = 4*log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) # %>%
+  # log_("Desliguei, estou despachado! (telefone)")
+
+
+clinica_4 <- lapply(1:100, function(i) {
+  simmer("Clinica de exames médicos - cenário 4") %>%
+  add_resource("guichet", 2) %>%
+  add_generator("cliente balcao", cliente_balcao, function() rexp(1, 1/15)) %>%
+  add_generator("cliente telefone", cliente_telefone, function() rexp(1, 1/5), priority=1) %>%
+  run(240)
+})
+```
+
+### Estatísticas Cenário 4
+
+```{r}
+#Analisar a média e mediana de tempo de espera no geral, ao telefone e ao balcão
+time4 <- clinica_4 %>%
+  get_mon_arrivals() %>%
+  transform(waiting_time = end_time - start_time - activity_time)
+#time4
+
+tempo_medio_total4 <- mean(time4$waiting_time)
+tempo_mediano_total4 <- median(time4$waiting_time)
+cat('Tempo médio de espera na fila entre todos os clientes: ', tempo_medio_total4, "\n")
+cat('Tempo mediano de espera na fila entre todos os clientes: ', tempo_mediano_total4, "\n")
+
+
+time_telefone4 <- data.frame()
+for (i in 1:nrow(time4)){
+  if (str_detect(time4$name[i], "cliente telefone")){
+    time_telefone4 <- rbind(time_telefone4, time4[i,])
+  }
+}
+
+tempo_medio_telefone4 <- mean(time_telefone4$waiting_time)
+tempo_mediano_telefone4 <- median(time_telefone4$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao telefone: ", tempo_medio_telefone4, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao telefone: ', tempo_mediano_telefone4, "\n")
+
+time_balcao4 <- anti_join(time4, time_telefone4)
+tempo_medio_balcao4 <- mean(time_balcao4$waiting_time)
+tempo_mediano_balcao4 <- median(time_balcao4$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao balcão: ", tempo_medio_balcao4, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao balcão: ', tempo_mediano_balcao4, "\n")
+
+#Quantas chamadas são perdidas em média por simulação
+proporcao_nao_atendidos4 <- sum(time_telefone4$activity_time == 0)/100
+#cat('Nº médio de chamadas não atendidas por simulação: ', proporcao_nao_atendidos4, "\n")
+
+
+resources_4 <- get_mon_resources(clinica_4)
+
+#Utilização dos guichets ao longo do tempo
+plot(resources_4, metric = "usage", items = "server") 
+
+#Quantos clientes estão na fila ao longo do tempo
+plot(resources_4,metric="usage", item="queue") #quantos clientes estão na fila ao longo do tempo
+
+
+arrivals_4 <- get_mon_arrivals(clinica_4)
+
+#Tempo total de permanência no sistema
+plot(arrivals_4, metric = "flow_time")  
+
+
+
+```
+
+- O tempo de espera em fila parece melhorar bastante relativamente aos cenários anteriores. No entanto o tempo mediano de espera dos clientes no balcão aumenta para 7 min. Ao telefone, o tempo de espera regista os melhores valores até ao momento, sendo a sua mediana 4 min.
+- Avaliámos também neste cenário o número de chamadas perdidas, registando-se que em média, foram perdidas cerca de 12 chamadas por simulação. É de notar também que, no final da simulação das 4 horas, essas 12 chamadas perdidas ocorrem, em média, nas últimas interações, sem que haja atendimento disponível para esses clientes.
+- A opcação dos guichets não difere significativamente dos restantes cenários, mantendo-se, em média, bastante ocupados ao longo das simulações.
+- Em termos de tamanho de fila, registam-se melhorias significativas, o que vai de acordo com a melhoria nos tempos de espera em fila.
+- O tempo de permanência no sistema também melhora significativamente, sendo que não aumenta tanto até ao final das 4h simuladas. No final das simulações, o tempo de permanência no sistema é, em média, um pouco menos que 25 min.
+
+
+## Cenário 5: O centro pode ponderar dedicar os 2 guichets para realizar apenas atendimento presencial. Neste caso, as chamadas são atendidas em back office por outro operador. Todos os operadores, os de front office e o de back office, atendem durante as 4 horas. As chamadas em espera quando atingem os 10 minutos são perdidas.
+
+```{r include=FALSE}
+set.seed(2024)
+
+cliente_balcao <- trajectory("balcao path") %>%
+  # log_("Cheguei (balcao)") %>%
+  seize("guichet", 1) %>%
+  # log_("Fui atendido (balcao)") %>%
+  timeout(function()  rlnorm(1, meanlog = log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) # %>%
+  # log_("Vou embora, estou despachado! (balcao)")
+
+cliente_telefone <- trajectory("telefone path") %>%
+  # log_("Liguei (telefone)") %>%
+  renege_in(function() 10, out = trajectory("Reneging telefone")) %>%
+   #log_("VOU DESLIGAR! Já passaram 10 min!! (telefone)")) %>%
+  seize("backoffice", 1) %>%
+  renege_abort() %>%
+  # log_("Fui atendido (telefone)") %>%
+  timeout(function() rlnorm(1, meanlog = 4*log(1.5), sdlog = log(3.5))) %>%
+  release("backoffice", 1) # %>%
+  # log_("Desliguei, estou despachado! (telefone)")
+
+
+clinica_5 <- lapply(1:100, function(i) {
+  simmer("Clinica de exames médicos - cenário 5") %>%
+  add_resource("guichet", 2) %>%
+  add_resource("backoffice", 1) %>%
+  add_generator("cliente balcao", cliente_balcao, function() rexp(1, 1/15)) %>%
+  add_generator("cliente telefone", cliente_telefone, function() rexp(1, 1/5), priority=1) %>%  #Aqui ainda é preciso ter prioridade os clientes de telefone?
+  run(240)
+})
+```
+
+### Estatísticas Cenário 5
+
+```{r}
+#Analisar a média e mediana de tempo de espera no geral, ao telefone e ao balcão
+time5 <- clinica_5 %>%
+  get_mon_arrivals() %>%
+  transform(waiting_time = end_time - start_time - activity_time)
+#time5
+
+tempo_medio_total5 <- mean(time5$waiting_time)
+tempo_mediano_total5 <- median(time5$waiting_time)
+#cat('Tempo médio de espera na fila entre todos os clientes: ', tempo_medio_total5, "\n")
+#cat('Tempo mediano de espera na fila entre todos os clientes: ', tempo_mediano_total5, "\n")
+
+
+time_telefone5 <- data.frame()
+for (i in 1:nrow(time5)){
+  if (str_detect(time5$name[i], "cliente telefone")){
+    time_telefone5 <- rbind(time_telefone5, time5[i,])
+  }
+}
+
+tempo_medio_telefone5 <- mean(time_telefone5$waiting_time)
+tempo_mediano_telefone5 <- median(time_telefone5$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao telefone: ", tempo_medio_telefone5, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao telefone: ', tempo_mediano_telefone5, "\n")
+
+time_balcao5 <- anti_join(time5, time_telefone5)
+tempo_medio_balcao5 <- mean(time_balcao5$waiting_time)
+tempo_mediano_balcao5 <- median(time_balcao5$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao balcão: ", tempo_medio_balcao5, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao balcão: ', tempo_mediano_balcao5, "\n")
+
+#Quantas chamadas são perdidas em médiapor simulação
+proporcao_nao_atendidos5 <- sum(time_telefone5$activity_time == 0)/100
+#cat('Nº médio de chamadas não atendidas por simulação: ', proporcao_nao_atendidos5, "\n")
+
+
+resources_5 <- get_mon_resources(clinica_5)
+
+#Utilização dos guichets ao longo do tempo
+plot(resources_5, metric = "usage", items = "server") 
+
+#Quantos clientes estão na fila ao longo do tempo
+plot(resources_5,metric="usage", item="queue") #quantos clientes estão na fila ao longo do tempo
+
+
+arrivals_5 <- get_mon_arrivals(clinica_5)
+
+#Tempo total de permanência no sistema
+plot(arrivals_5, metric = "flow_time")  
+
+
+#Quantas chamadas são perdidas em média
+arrivals_5
+```
+
+- Neste cenário o tempo de espera em balcão diminui significativamente para quase nulo, mas o tempo de espera ao telefone aumenta em 6 minutos na sua mediana, relativamente ao cenário anterior. Isto indica que deve ser melhorada a distribuição dos recursos, de modo a que haja mais balcões em back office.
+- Os guichets não têm assim tanta utilização, em comparação com o backoffice, ou seja, o atendimento backoffice, está bastante ocupado desde o abrir até ao fechar, enquanto que os balcões de atendimento não costumam estar a ser utilizados os dois ao memso tempo durante o tempo de simulação.
+- O que se verificou anteriormente também se evidencia no tamanho da fila para clientes de balcão e de telefone. A fila de balcao é praticamente nula ao longo da simulação, em média.
+- O tempo de permanência em sistema parece bom no geral.
+
+
+Em geral este último cenário é pior que o anterior. O cenário com melhores resultados foi o 4. 
+Faz sentido designar mais um guichet de atendimento, visto que há ainda um elevado número de chamadas não atendidas, no entanto, o cenário 5 não distribui bem os recursos e obtém resultados piores. 
+
+## Cenário 6 
+Tendo em conta os resultados anteriores, vamos desenhar um novo cenário onde implementamos a estrutura do cenário 5 de back office e front office, no entanto vamos designar 2 guichets para backoffice, a atender o telefone, e apenas 1 guichet em front office.
+
+```{r include=FALSE}
+set.seed(2024)
+
+cliente_balcao <- trajectory("balcao path") %>%
+  # log_("Cheguei (balcao)") %>%
+  seize("guichet", 1) %>%
+  # log_("Fui atendido (balcao)") %>%
+  timeout(function()  rlnorm(1, meanlog = log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) # %>%
+  # log_("Vou embora, estou despachado! (balcao)")
+
+cliente_telefone <- trajectory("telefone path") %>%
+  # log_("Liguei (telefone)") %>%
+  renege_in(function() 10, out = trajectory("Reneging telefone")) %>%
+   #log_("VOU DESLIGAR! Já passaram 10 min!! (telefone)")) %>%
+  seize("backoffice", 1) %>%
+  renege_abort() %>%
+  # log_("Fui atendido (telefone)") %>%
+  timeout(function() rlnorm(1, meanlog = 4*log(1.5), sdlog = log(3.5))) %>%
+  release("backoffice", 1) # %>%
+  # log_("Desliguei, estou despachado! (telefone)")
+
+
+clinica_6 <- lapply(1:100, function(i) {
+  simmer("Clinica de exames médicos - cenário 6") %>%
+  add_resource("guichet", 1) %>%
+  add_resource("backoffice", 2) %>%
+  add_generator("cliente balcao", cliente_balcao, function() rexp(1, 1/15)) %>%
+  add_generator("cliente telefone", cliente_telefone, function() rexp(1, 1/5), priority=1) %>%  #Aqui ainda é preciso ter prioridade os clientes de telefone?
+  run(240)
+})
+```
+
+### Estatísticas Cenário 6
+```{r}
+#Analisar a média e mediana de tempo de espera no geral, ao telefone e ao balcão
+time6 <- clinica_6 %>%
+  get_mon_arrivals() %>%
+  transform(waiting_time = end_time - start_time - activity_time)
+#time6
+
+tempo_medio_total6 <- mean(time6$waiting_time)
+tempo_mediano_total6 <- median(time6$waiting_time)
+#cat('Tempo médio de espera na fila entre todos os clientes: ', tempo_medio_total6, "\n")
+#cat('Tempo mediano de espera na fila entre todos os clientes: ', tempo_mediano_total6, "\n")
+
+
+time_telefone6 <- data.frame()
+for (i in 1:nrow(time6)){
+  if (str_detect(time6$name[i], "cliente telefone")){
+    time_telefone6 <- rbind(time_telefone6, time6[i,])
+  }
+}
+
+tempo_medio_telefone6 <- mean(time_telefone6$waiting_time)
+tempo_mediano_telefone6 <- median(time_telefone6$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao telefone: ", tempo_medio_telefone6, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao telefone: ', tempo_mediano_telefone6, "\n")
+
+time_balcao6 <- anti_join(time6, time_telefone6)
+tempo_medio_balcao6 <- mean(time_balcao6$waiting_time)
+tempo_mediano_balcao6 <- median(time_balcao6$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao balcão: ", tempo_medio_balcao6, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao balcão: ', tempo_mediano_balcao6, "\n")
+
+#Quantas chamadas são perdidas em média por simulação
+proporcao_nao_atendidos6 <- sum(time_telefone6$activity_time == 0)/100
+#cat('Nº médio de chamadas não atendidas por simulação: ', proporcao_nao_atendidos6, "\n")
+
+
+resources_6 <- get_mon_resources(clinica_6)
+
+#Utilização dos guichets ao longo do tempo
+plot(resources_6, metric = "usage", items = "server") 
+
+#Quantos clientes estão na fila ao longo do tempo
+plot(resources_6,metric="usage", item="queue") #quantos clientes estão na fila ao longo do tempo
+
+
+arrivals_6 <- get_mon_arrivals(clinica_6)
+
+#Tempo total de permanência no sistema
+plot(arrivals_6, metric = "flow_time")  
+
+```
+Este cenário apresenta os melhores resultados até agora. 
+- A mediana de tempo de espera é quase nulo, em termos gerais. Nos clientes ao telefone o tempo de espera mediano é de 3 min e ao balcão é nulo também.
+- Em termos de recursos, os guichets de back office continuam bastante ocupados, no entanto não tão sobrecarregados como no cenário 5. O guichet em front office, no entanto, continua a não ter muita frequência de clientes.
+- O tamanho da fila parece demonstrar bons resultados, mas é de notar que as chamadas telefónicas apresentam maior fila que o balcão no geral.
+- O tempo de permanência no sistema apresenta bons resultados, mantendo-se relativamente constante a partir dos 50 min de simulação, apresentando valores de cerca de 10 min em média.
+
+
+# cenário 7
+- Tem em base o cenário 4, mas aumentando os guichets de dois para três, e removendo
+as prioridades completamente.
+Nos cenários em que um guichet é usado em simultaneo com dois backoffices,
+é sempre o guichet que fica mais livre. A ideia é que, como o cenário 4 obteve
+os melhores resultados apenas com 2 guichets que atendiam todo o tipo de clientes,
+aumentando simplesmente os guichets para 3, e removendo as prioridades, 
+está-se inerentemente a focar nos telefonemas, e distribuir o pouco atendimento 
+dos clientes de balcão que existe pelos guichets disponiveis.
+Manter prioridade num tipo de clientes especifico faz correr o risco de 
+ignorar completamente o outro e vice-versa.
+
+```{r}
+set.seed(2024)
+
+cliente_balcao <- trajectory("balcao path") %>%
+  # log_("Cheguei (balcao)") %>%
+  seize("guichet", 1) %>%
+  # log_("Fui atendido (balcao)") %>%
+  timeout(function()  rlnorm(1, meanlog = log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) # %>%
+  # log_("Vou embora, estou despachado! (balcao)")
+
+cliente_telefone <- trajectory("telefone path") %>%
+  # log_("Liguei (telefone)") %>%
+  renege_in(10, out = trajectory("Reneging caller")) %>%
+        #log_("VOU DESLIGAR! Já passaram 10 min!! (telefone)")) %>%
+  seize("guichet", 1) %>%
+  # log_("Fui atendido (telefone)") %>%
+  renege_abort() %>%
+  timeout(function() rlnorm(1, meanlog = 4*log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) # %>%
+  # log_("Desliguei, estou despachado! (telefone)")
+
+
+clinica_7 <- lapply(1:100, function(i) {
+  simmer("Clinica de exames médicos - cenário 7") %>%
+  add_resource("guichet", 3) %>%
+  add_generator("cliente balcao", cliente_balcao, function() rexp(1, 1/15)) %>%
+  add_generator("cliente telefone", cliente_telefone, function() rexp(1, 1/5)) %>%
+  run(240)
+})
+```
+
+
+### Estatísticas Cenário 7
+```{r}
+#Analisar a média e mediana de tempo de espera no geral, ao telefone e ao balcão
+time7 <- clinica_7 %>%
+  get_mon_arrivals() %>%
+  transform(waiting_time = end_time - start_time - activity_time)
+#time7
+
+tempo_medio_total7 <- mean(time7$waiting_time)
+tempo_mediano_total7 <- median(time7$waiting_time)
+cat('Tempo médio de espera na fila entre todos os clientes: ', tempo_medio_total7, "\n")
+cat('Tempo mediano de espera na fila entre todos os clientes: ', tempo_mediano_total7, "\n")
+
+
+time_telefone7 <- data.frame()
+for (i in 1:nrow(time7)){
+  if (str_detect(time7$name[i], "cliente telefone")){
+    time_telefone7 <- rbind(time_telefone7, time7[i,])
+  }
+}
+
+tempo_medio_telefone7 <- mean(time_telefone7$waiting_time)
+tempo_mediano_telefone7 <- median(time_telefone7$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao telefone: ", tempo_medio_telefone7, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao telefone: ', tempo_mediano_telefone7, "\n")
+
+time_balcao7 <- anti_join(time7, time_telefone7)
+tempo_medio_balcao7 <- mean(time_balcao7$waiting_time)
+tempo_mediano_balcao7 <- median(time_balcao7$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao balcão: ", tempo_medio_balcao7, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao balcão: ', tempo_mediano_balcao7, "\n")
+
+#Quantas chamadas são perdidas em média por simulação
+proporcao_nao_atendidos7 <- sum(time_telefone7$activity_time == 0)/100
+#cat('Nº médio de chamadas não atendidas por simulação: ', proporcao_nao_atendidos7, "\n")
+
+
+resources_7 <- get_mon_resources(clinica_7)
+
+#Utilização dos guichets ao longo do tempo
+plot(resources_7, metric = "usage", items = "server") 
+
+#Quantos clientes estão na fila ao longo do tempo
+plot(resources_7,metric="usage", item="queue") #quantos clientes estão na fila ao longo do tempo
+
+
+arrivals_7 <- get_mon_arrivals(clinica_7)
+
+#Tempo total de permanência no sistema
+plot(arrivals_7, metric = "flow_time")  
+
+```
+Sem dúvida nenhuma que este cenário é o que obtem os melhores resultados, tendo em 
+conta os recursos utilizados, apesar da sua simplicidade
+Em média, estas 100 simulações têm um tempo mediano de espera 
+de aproximadamente 0, e um tempo médio de espera de 2.74 minutos.
+O valor mais supreendente desta simulação é a média de chamadas não atendidas, 
+que enquanto noutras simulações este valor varia entre 11 e 27 chamadas perdidas,
+aqui ronda 5 chamadas perdidas por simulação.
+Desta forma, este cenário é o que apresenta melhores resultados face ambos os
+objetivos propostos e custos associados, apenas necessitando de 3 dos 4 guichets
+totais a serem utilizados.
+
+## Cenário 8
+Agora vamos só esperimentar com um cenário onde se utilizam os 4 guichets disponíveis, dedicando 3 a back office, e 1 a front office.
+```{r include=FALSE}
+set.seed(2024)
+
+cliente_balcao <- trajectory("balcao path") %>%
+  #log_("Cheguei (balcao)") %>%
+  seize("guichet", 1) %>%
+  #log_("Fui atendido (balcao)") %>%
+  timeout(function()  rlnorm(1, meanlog = log(1.5), sdlog = log(3.5))) %>%
+  release("guichet", 1) 
+  #log_("Vou embora, estou despachado! (balcao)")
+
+cliente_telefone <- trajectory("telefone path") %>%
+  #log_("Liguei (telefone)") %>%
+  renege_in(function() 10, out = trajectory("Reneging telefone")) %>%
+   #log_("VOU DESLIGAR! Já passaram 10 min!! (telefone)")) %>%
+  seize("backoffice", 1) %>%
+  renege_abort() %>%
+  #log_("Fui atendido (telefone)") %>%
+  timeout(function() rlnorm(1, meanlog = 4*log(1.5), sdlog = log(3.5))) %>%
+  release("backoffice", 1)
+  #log_("Desliguei, estou despachado! (telefone)")
+
+
+clinica_8 <- lapply(1:100, function(i) {
+  simmer("Clinica de exames médicos - cenário 8") %>%
+  add_resource("guichet", 1) %>%
+  add_resource("backoffice", 3) %>%
+  add_generator("cliente balcao", cliente_balcao, function() rexp(1, 1/15)) %>%
+  add_generator("cliente telefone", cliente_telefone, function() rexp(1, 1/5), priority=1) %>%  #Aqui ainda é preciso ter prioridade os clientes de telefone?
+  run(240)
+})
+```
+
+### Estatísticas Cenário 8
+```{r}
+#Analisar a média e mediana de tempo de espera no geral, ao telefone e ao balcão
+time8 <- clinica_8 %>%
+  get_mon_arrivals() %>%
+  transform(waiting_time = end_time - start_time - activity_time)
+#time8
+
+tempo_medio_total8<- mean(time8$waiting_time)
+tempo_mediano_total8 <- median(time8$waiting_time)
+cat('Tempo médio de espera na fila entre todos os clientes: ', tempo_medio_total8, "\n")
+cat('Tempo mediano de espera na fila entre todos os clientes: ', tempo_mediano_total8, "\n")
+
+
+time_telefone8 <- data.frame()
+for (i in 1:nrow(time8)){
+  if (str_detect(time8$name[i], "cliente telefone")){
+    time_telefone8 <- rbind(time_telefone8, time8[i,])
+  }
+}
+
+tempo_medio_telefone8 <- mean(time_telefone8$waiting_time)
+tempo_mediano_telefone8 <- median(time_telefone8$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao telefone: ", tempo_medio_telefone8, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao telefone: ', tempo_mediano_telefone8, "\n")
+
+time_balcao8 <- anti_join(time8, time_telefone8)
+tempo_medio_balcao8 <- mean(time_balcao8$waiting_time)
+tempo_mediano_balcao8 <- median(time_balcao8$waiting_time)
+#cat("Tempo médio de espera na fila entre os clientes ao balcão: ", tempo_medio_balcao8, "\n")
+#cat('Tempo mediano de espera na fila entre os clientes ao balcão: ', tempo_mediano_balcao8, "\n")
+
+#Quantas chamadas são perdidas em média por simulação
+proporcao_nao_atendidos8 <- sum(time_telefone8$activity_time == 0)/100
+#cat('Nº médio de chamadas não atendidas por simulação: ', proporcao_nao_atendidos8, "\n")
+
+
+resources_8 <- get_mon_resources(clinica_8)
+
+#Utilização dos guichets ao longo do tempo
+plot(resources_8, metric = "usage", items = "server") 
+
+#Quantos clientes estão na fila ao longo do tempo
+plot(resources_8,metric="usage", item="queue") #quantos clientes estão na fila ao longo do tempo
+
+
+arrivals_8 <- get_mon_arrivals(clinica_8)
+
+#Tempo total de permanência no sistema
+plot(arrivals_8, metric = "flow_time")  
+```
+
+Neste novo cenário o backoffice já não está tão sobrecarregado, no entanto continua a haver a questão do guichet em front office não ter uma grande frequência de clientes ao balcão para atender.
+Em termos de fila de espera e de tempo de permanência em fila de espera, os resultados também são muito similares ao cenário 7.
+
+Em conclusão, este cenário é o que dá os melhores resultados de todos os restantes, em termos de tempos de espera e em termos de número de chamadas perdidas. No entanto estes resultados não são tão melhores o suficiente para justificar o gasto de ter mais um recurso. Para elém de permanecer o problema do guichet em front office não ter muitos clientes para atender.
+
