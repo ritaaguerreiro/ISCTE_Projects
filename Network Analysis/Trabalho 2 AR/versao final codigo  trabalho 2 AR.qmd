@@ -1,0 +1,530 @@
+---
+title: "Trabalho 2 - Análise de Redes"
+author: "Rita Guerreiro, nº112018 | Tomás Monge, nº98574 | Miguel Celestino, nº 111590"
+format: html
+editor: visual
+---
+
+# Trabalho 2 \[Análise de Redes\]
+
+Neste trabalho será analisada uma rede ego, não orientada, que representa o contacto presencial entre indivíduos. Na rede, os nodos remetem as pessoas (total de 51), e as ligações, o contacto entre as mesmas.
+
+#### **Importação das Bibliotecas necessárias**
+
+```{r}
+library(igraph)
+```
+
+#### **Importação e Visualização da Rede (contida no ficheiro "***Ligações T2.txt**"*****)**
+
+```{r}
+set.seed(1) #para reprodutibilidade 
+
+#Definir o grafo "g" da rede importada através do ficheiro .txt com as ligações
+g <- read_graph('Ligações T2.txt', format=c('edgelist'), directed=F)
+
+#Mostrar o grafo 
+plot(g, vertex.color = "lightgreen", vertex.label.color = "black", vertex.label.cex=0.9, vertex.size = 18)#com caracterização dos nodos
+plot(g, vertex.size=7,vertex.label=NA, vertex.color = "lightgreen") #sem caracterização dos nodos
+```
+
+#### **Análise inicial das características da Rede**
+
+```{r}
+cat('Nodos: N =',vcount(g),'\n')  #dimensão/nº total de nodos
+
+cat('Ligações: L =',ecount(g),'\n') #número total de ligações 
+
+cat('Densidade: d =',edge_density(g),'\n') #densidade 
+
+cat('Grau médio: <k> =',mean(degree(g)),'\n')   #grau médio
+
+cat('Grau mínimo: k_min =',min(degree(g)),'\n')  #grau mínimo
+
+cat('Grau máximo: k_max =',max(degree(g)),'\n') #grau máximo
+
+cat('Distância média: <l> =',mean_distance(g),'\n') #distância média
+
+cat('Diâmetro: l_max =',max(distances(g)),'\n') #diâmetro
+
+cat('Coeficiente de Clustering: C =',transitivity(g),'\n') #coeficiente de clustering
+
+cat('Nº de cliques:',length(cliques(g)), '\n') #número total de cliques 
+```
+
+```{r}
+#Grau de cada nodo 
+deg <- degree(g,mode='total')
+cat('Grau de cada nodo: ', deg,'\n\n')
+
+#Parâmetro de heterogeneidade
+ht <-mean(deg*deg)/mean(deg)^2   
+cat('Heterogeneidade (de grau): ',ht,'\n\n')
+
+#Distribuição das frequencias de grau 
+cat('Distribuição das frequências de cada grau:')
+dg <- table(degree(g,mode='total')) 
+dg
+hist(deg,breaks=0:max(deg), col='lightblue',   #representação num histograma
+     main='Histograma do Grau dos Nodos', xlab='grau', ylab='frequência')
+```
+
+## Secção Q1.
+
+**Aplicação de quatro métodos de detecção de comunidades estudados, e para cada um indicadas as seguintes características:**
+
+**i.** Número de comunidades obtidas
+
+**ii.** Dimensão de cada comunidade
+
+**iii.** Número de ligações internas de cada comunidade e a respectiva densidade interna
+
+**iv.** Número de ligações externas de cada comunidade
+
+**v.** Análise da partição obtida quanto à coesão e a separação
+
+**vi.** Utilização da medida estudada para avaliar as partições
+
+### 1. Algoritmo de Remoção de Pontes por Girvan e Newman
+
+```{r}
+# Semente
+set.seed(1)
+
+# Aplicação do método à rede:
+ceb <- cluster_edge_betweenness(g)
+
+# Observar a rede:
+plot(ceb, g, vertex.size=15, vertex.label.cex=0.6) #com legendas nos nodos
+plot(ceb, g, vertex.size=7, vertex.label=NA) #sem legendas nos nodos
+
+#Determinar o nº de comunidades e respetiva dimensão, nº de ligações internas e externas, densidade interna, e modularidade da partição (alíneas i,ii,iii,iv e vi))
+
+cat("*Detalhes das Comunidades*\n\n")
+
+cn <- length(communities(ceb)) #número de comunidades
+ft <- table(membership(ceb)) # dimensão de cada comunidade
+cat(sprintf("Nº de comunidades: %d\n\n", cn))
+cat("Dimensões das comunidades: ")
+ft
+
+memb <- membership(ceb) # vetor com cada comunidade
+communities <- unique(memb) # vetor com as comunidades
+
+for (i in communities) {
+  # Nodos da comunidade
+  nodes <- which(memb == i)
+  subgraph <- induced_subgraph(g, nodes)
+  
+  # Dimensão da comunidade
+  size <- length(nodes)
+  
+  # Ligações internas e densidade interna
+  internal_links <- ecount(subgraph)
+  internal_density <- edge_density(subgraph)
+  
+  # Ligações externas
+  external_links <- sum(degree(g, nodes)) - 2 * internal_links
+  
+  # Exibição
+  cat(sprintf("\n Comunidade %d:\n", i))
+  cat(sprintf("  - Dimensão: %d nodos\n", size))
+  cat(sprintf("  - Ligações internas: %d\n", internal_links))
+  cat(sprintf("  - Densidade interna: %.4f\n", internal_density))
+  cat(sprintf("  - Ligações externas: %d\n\n", external_links))
+}
+
+# Modularidade:
+Q <- modularity(ceb)
+cat("Modularidade: Q =", Q)
+```
+
+### 2. Algoritmo Cluster Fast Greedy
+
+```{r}
+# Fazer o set da seed
+set.seed(1)
+
+# Aplicar o algoritmo:
+al_FG <- cluster_fast_greedy(g)
+
+# Observar as comunidades
+plot(al_FG, g, vertex.size=15, vertex.label.cex=0.6) #com legendas nos nodos
+plot(al_FG, g, vertex.size=7, vertex.label=NA) #sem legendas nos nodos
+
+#Determinar o nº de comunidades e respetiva dimensão, nº de ligações internas e externas, densidade interna, e modularidade da partição (alíneas i,ii,iii,iv e vi))
+
+cat("*Detalhes das Comunidades* \n\n")
+
+cn_fg <- length(communities(al_FG)) #número de comunidades
+ft_fg <- table(membership(al_FG)) # tabela da dimensão de cada comunidade 
+cat(sprintf("Nº de comunidades: %d\n\n", cn_fg))
+cat("Dimensões das comunidades: ")
+ft_fg
+
+membFG <- membership(al_FG) # vetor com cada comunidade
+communitiesFG <- sort(unique(membFG)) # vetor com as comunidades
+
+for (i in communitiesFG) {
+  # Nodos da comunidade
+  nodes <- which(membFG == i)
+  subgraph <- induced_subgraph(g, nodes)
+  
+  # Dimensão da comunidade
+  size <- length(nodes)
+  
+  # Ligações internas e densidade interna
+  internal_links <- ecount(subgraph)
+  internal_density <- edge_density(subgraph)
+  
+  # Ligações externas
+  external_links <- sum(degree(g, nodes)) - 2 * internal_links
+  
+  # Exibição
+  cat(sprintf("\n Comunidade %d:\n", i))
+  cat(sprintf("  - Dimensão: %d nodos\n", size))
+  cat(sprintf("  - Ligações internas: %d\n", internal_links))
+  cat(sprintf("  - Densidade interna: %.4f\n", internal_density))
+  cat(sprintf("  - Ligações externas: %d\n\n", external_links))
+}
+
+# Modularidade:
+Q <- modularity(al_FG)
+cat("Modularidade: Q =", Q)
+
+```
+
+### 3. Algoritmo de Louvain
+
+```{r}
+#Definir semente 
+set.seed(1)
+
+#Aplicação do método à rede
+gl <- cluster_louvain(g)
+
+#Visualizar o grafo com as comunidades
+plot(gl, g, vertex.size=15, vertex.label.cex=0.6) #com legendas nos nodos
+plot(gl, g, vertex.size=7, vertex.label=NA) #sem legendas nos nodos
+
+#Determinar o nº de comunidades e respetiva dimensão, nº de ligações internas e externas, densidade interna, e modularidade da partição (alíneas i,ii,iii,iv e vi))
+
+cat("*Detalhes das Comunidades*\n\n")
+
+nc <- length(communities(gl)) #número de comunidades 
+tf <- table(membership(gl)) #dimensão de cada comunidade 
+cat(sprintf("Nº de comunidades: %d\n\n", nc))
+cat("Distribuição de frequências das dimensões das comunidades:")
+tf
+
+memb_gl <- membership(gl) # vetor com cada comunidade
+communities_gl <- unique(memb_gl) # vetor com as comunidades
+
+for (i in communities_gl) {
+  # Nodos da comunidade
+  nodes <- which(memb_gl == i)
+  subgraph <- induced_subgraph(g, nodes)
+  
+  # Dimensão da comunidade
+  size <- length(nodes)
+  
+  # Ligações internas e densidade interna
+  internal_links <- ecount(subgraph)
+  internal_density <- edge_density(subgraph)
+  
+  # Ligações externas
+  external_links <- sum(degree(g, nodes)) - 2 * internal_links
+  
+  # Exibição
+  cat(sprintf("\n Comunidade %d:\n", i))
+  cat(sprintf("  - Dimensão: %d nodos\n", size))
+  cat(sprintf("  - Ligações internas: %d\n", internal_links))
+  cat(sprintf("  - Densidade interna: %.4f\n", internal_density))
+  cat(sprintf("  - Ligações externas: %d\n\n", external_links))
+}
+
+# Modularidade:
+Q <- modularity(gl)
+cat("Modularidade: Q =", Q)
+```
+
+#### 
+
+### 4. Algoritmo de Propagação de Etiquetas
+
+**1ª implementação** (*seed*=1):
+
+```{r}
+#Definir semente=1
+set.seed(1)
+
+# Aplicar o método
+clp <- cluster_label_prop(g)
+
+# Vizualizar as comunidades detetadas
+set.seed(1)
+plot(clp, g, vertex.size=15, vertex.label.cex=0.6) #com legendas nos nodos
+plot(clp, g, vertex.size=7, vertex.label=NA) #sem legendas nos nodos
+
+#Determinar o nº de comunidades e respetiva dimensão, nº de ligações internas e externas, densidade interna, e modularidade da partição (alíneas i,ii,iii,iv e vi))
+
+cat("*Detalhes das Comunidades*\n\n")
+
+nc_clp <- length(communities(clp)) #número de comunidades 
+tf_clp <- table(membership(clp)) #dimensão de cada comunidade 
+cat(sprintf("Nº de comunidades: %d\n\n", nc_clp))
+cat("Distribuição de frequências das dimensões das comunidades:")
+tf_clp
+
+memb_clp <- membership(clp) # vetor com cada comunidade
+communities_clp <- unique(memb_clp) # vetor com as comunidades
+
+for (i in communities_clp) {
+  # Nodos da comunidade
+  nodes <- which(memb_clp == i)
+  subgraph <- induced_subgraph(g, nodes)
+  
+  # Dimensão da comunidade
+  size <- length(nodes)
+  
+  # Ligações internas e densidade interna
+  internal_links <- ecount(subgraph)
+  internal_density <- edge_density(subgraph)
+  
+  # Ligações externas
+  external_links <- sum(degree(g, nodes)) - 2 * internal_links
+  
+  # Exibição
+  cat(sprintf("\n Comunidade %d:\n", i))
+  cat(sprintf("  - Dimensão: %d nodos\n", size))
+  cat(sprintf("  - Ligações internas: %d\n", internal_links))
+  cat(sprintf("  - Densidade interna: %.4f\n", internal_density))
+  cat(sprintf("  - Ligações externas: %d\n\n", external_links))
+}
+
+# Modularidade:
+Q <- modularity(clp)
+cat("Modularidade: Q =", Q)
+```
+
+**2ª implementação** (*seed*=10):
+
+```{r}
+
+#Definir semente=10
+set.seed(10)
+
+# Aplicar o método
+clp2 <- cluster_label_prop(g)
+
+# Vizualizar a Rede
+#set.seed(1)
+plot(clp2, g, vertex.size=15, vertex.label.cex=0.6) #com legendas nos nodos
+plot(clp2, g, vertex.size=7, vertex.label=NA) #sem legendas nos nodos
+
+#Determinar o nº de comunidades e respetiva dimensão, nº de ligações internas e externas, densidade interna, e modularidade da partição (alíneas i,ii,iii,iv e vi))
+
+cat("*Detalhes das Comunidades*\n\n")
+
+nc_clp2 <- length(communities(clp2)) #número de comunidades 
+tf_clp2 <- table(membership(clp2)) #dimensão de cada comunidade 
+cat(sprintf("Nº de comunidades: %d\n\n", nc_clp2))
+cat("Distribuição de frequências das dimensões das comunidades:")
+tf_clp2
+
+memb_clp2 <- membership(clp2) # vetor com cada comunidade
+communities_clp2 <- unique(memb_clp2) # vetor com as comunidades
+
+for (i in communities_clp2) {
+  # Nodos da comunidade
+  nodes <- which(memb_clp2 == i)
+  subgraph <- induced_subgraph(g, nodes)
+  
+  # Dimensão da comunidade
+  size <- length(nodes)
+  
+  # Ligações internas e densidade interna
+  internal_links <- ecount(subgraph)
+  internal_density <- edge_density(subgraph)
+  
+  # Ligações externas
+  external_links <- sum(degree(g, nodes)) - 2 * internal_links
+  
+  # Exibição
+  cat(sprintf("\n Comunidade %d:\n", i))
+  cat(sprintf("  - Dimensão: %d nodos\n", size))
+  cat(sprintf("  - Ligações internas: %d\n", internal_links))
+  cat(sprintf("  - Densidade interna: %.4f\n", internal_density))
+  cat(sprintf("  - Ligações externas: %d\n\n", external_links))
+}
+
+# Modularidade:
+Q <- modularity(clp2)
+cat("Modularidade: Q =", Q)
+```
+
+**3ª implementação** (*seed*=23):
+
+```{r}
+
+#Definir semente=23
+set.seed(23)
+
+# Aplicar o método
+clp3 <- cluster_label_prop(g)
+
+# Vizualizar a rede 
+#set.seed(1)
+plot(clp3, g, vertex.size=15, vertex.label.cex=0.6) #com legendas nos nodos
+plot(clp3, g, vertex.size=7, vertex.label=NA) #sem legendas nos nodos
+
+#Determinar o nº de comunidades e respetiva dimensão, nº de ligações internas e externas, densidade interna, e modularidade da partição (alíneas i,ii,iii,iv e vi))
+
+cat("*Detalhes das Comunidades*\n\n")
+
+nc_clp3 <- length(communities(clp3)) #número de comunidades 
+tf_clp3 <- table(membership(clp3)) #dimensão de cada comunidade 
+cat(sprintf("Nº de comunidades: %d\n\n", nc_clp3))
+cat("Distribuição de frequências das dimensões das comunidades:")
+tf_clp3
+
+memb_clp3 <- membership(clp3) # vetor com cada comunidade
+communities_clp3 <- unique(memb_clp3) # vetor com as comunidades
+
+for (i in communities_clp3) {
+  # Nodos da comunidade
+  nodes <- which(memb_clp3 == i)
+  subgraph <- induced_subgraph(g, nodes)
+  
+  # Dimensão da comunidade
+  size <- length(nodes)
+  
+  # Ligações internas e densidade interna
+  internal_links <- ecount(subgraph)
+  internal_density <- edge_density(subgraph)
+  
+  # Ligações externas
+  external_links <- sum(degree(g, nodes)) - 2 * internal_links
+  
+  # Exibição
+  cat(sprintf("\n Comunidade %d:\n", i))
+  cat(sprintf("  - Dimensão: %d nodos\n", size))
+  cat(sprintf("  - Ligações internas: %d\n", internal_links))
+  cat(sprintf("  - Densidade interna: %.4f\n", internal_density))
+  cat(sprintf("  - Ligações externas: %d\n\n", external_links))
+}
+
+# Modularidade:
+Q <- modularity(clp3)
+cat("Modularidade: Q =", Q)
+```
+
+## Adicional
+
+### Algoritmo de Louvain com melhor valor de modularidade (seed = 15)
+
+```{r}
+#Definir semente 
+set.seed(15)
+
+#Aplicação do método à rede
+gl <- cluster_louvain(g)
+
+#Visualizar o grafo com as comunidades
+plot(gl, g, vertex.size=15, vertex.label.cex=0.6) #com legendas nos nodos
+plot(gl, g, vertex.size=7, vertex.label=NA) #sem legendas nos nodos
+
+#Determinar o nº de comunidades e respetiva dimensão, nº de ligações internas e externas, densidade interna, e modularidade da partição (alíneas i,ii,iii,iv e vi))
+
+cat("*Detalhes das Comunidades*\n\n")
+
+nc <- length(communities(gl)) #número de comunidades 
+tf <- table(membership(gl)) #dimensão de cada comunidade 
+cat(sprintf("Nº de comunidades: %d\n\n", nc))
+cat("Distribuição de frequências das dimensões das comunidades:")
+tf
+
+memb_gl <- membership(gl) # vetor com cada comunidade
+communities_gl <- unique(memb_gl) # vetor com as comunidades
+
+for (i in communities_gl) {
+  # Nodos da comunidade
+  nodes <- which(memb_gl == i)
+  subgraph <- induced_subgraph(g, nodes)
+  
+  # Dimensão da comunidade
+  size <- length(nodes)
+  
+  # Ligações internas e densidade interna
+  internal_links <- ecount(subgraph)
+  internal_density <- edge_density(subgraph)
+  
+  # Ligações externas
+  external_links <- sum(degree(g, nodes)) - 2 * internal_links
+  
+  # Exibição
+  cat(sprintf("\n Comunidade %d:\n", i))
+  cat(sprintf("  - Dimensão: %d nodos\n", size))
+  cat(sprintf("  - Ligações internas: %d\n", internal_links))
+  cat(sprintf("  - Densidade interna: %.4f\n", internal_density))
+  cat(sprintf("  - Ligações externas: %d\n\n", external_links))
+}
+
+# Modularidade:
+Q <- modularity(gl)
+cat("Modularidade: Q =", Q)
+```
+
+### Algoritmo Cluster Optimal
+
+```{r}
+#Definir semente 
+set.seed(1)
+
+#Aplicação do método à rede
+gco <- cluster_optimal(g)
+
+#Visualizar o grafo com as comunidades
+plot(gco, g, vertex.size=15, vertex.label.cex=0.6) #com legendas nos nodos
+plot(gco, g, vertex.size=7, vertex.label=NA) #sem legendas nos nodos
+
+#Determinar o nº de comunidades e respetiva dimensão, nº de ligações internas e externas, densidade interna, e modularidade da partição (alíneas i,ii,iii,iv e vi))
+
+cat("*Detalhes das Comunidades*\n\n")
+
+nco <- length(communities(gco)) #número de comunidades 
+tfo <- table(membership(gco)) #dimensão de cada comunidade 
+cat(sprintf("Nº de comunidades: %d\n\n", nco))
+cat("Distribuição de frequências das dimensões das comunidades:")
+tfo
+
+memb_gco <- membership(gco) # vetor com cada comunidade
+communities_gco <- unique(memb_gco) # vetor com as comunidades
+
+for (i in communities_gco) {
+  # Nodos da comunidade
+  nodes <- which(memb_gco == i)
+  subgraph <- induced_subgraph(g, nodes)
+  
+  # Dimensão da comunidade
+  size <- length(nodes)
+  
+  # Ligações internas e densidade interna
+  internal_links <- ecount(subgraph)
+  internal_density <- edge_density(subgraph)
+  
+  # Ligações externas
+  external_links <- sum(degree(g, nodes)) - 2 * internal_links
+  
+  # Exibição
+  cat(sprintf("\n Comunidade %d:\n", i))
+  cat(sprintf("  - Dimensão: %d nodos\n", size))
+  cat(sprintf("  - Ligações internas: %d\n", internal_links))
+  cat(sprintf("  - Densidade interna: %.4f\n", internal_density))
+  cat(sprintf("  - Ligações externas: %d\n\n", external_links))
+}
+
+# Modularidade:
+Q <- modularity(gco)
+cat("Modularidade: Q =", Q)
+```

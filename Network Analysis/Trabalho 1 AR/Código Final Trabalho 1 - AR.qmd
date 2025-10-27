@@ -1,0 +1,202 @@
+---
+title: "Código Final Trabalho 1"
+author: "Rita Guerreiro | nº 112018 | CDC2"
+format: html
+editor: visual
+---
+
+## Trabalho 1 \[Análise de Redes\]
+
+Neste trabalho será analisada uma rede ego, não orientada, que representa o contacto presencial entre indivíduos. Na rede, os nodos remetem as pessoas (total de 51), e as ligações, o contacto entre as mesmas.
+
+**Importação das Bibliotecas necessárias**
+
+```{r}
+library(igraph)
+```
+
+**Importação e Visualização da Rede (contida no ficheiro "***Ligações T1.txt**"*****)**
+
+```{r}
+set.seed(2024) #para reprodutibilidade 
+
+#Definir o grafo "g" da rede importada através do ficheiro .txt com as ligações
+g <- read_graph('Ligações T1.txt', format=c('edgelist'), directed=F)
+
+#Mostrar o grafo
+plot(g, vertex.color = "purple", vertex.label.color = "black", vertex.label.cex=0.9, vertex.size = 18) 
+```
+
+**Determinação do Nodo que torna a Rede Ego**
+
+```{r}
+
+max(degree(g)) #existe um nodo com grau o maior grau da rede (50) que por sua vez está ligado a todos os outros 
+
+#Obter o tal nodo com maior grau na rede
+nodo_maior_grau <- V(g)[degree(g)==50] 
+nodo_maior_grau #verifica-se que o nodo com maior grau é o 26 (presente no centro do grafo)
+
+degree(g,26) #confirma-se que o nodo 26 é de facto o nodo que torna a rede ego, pois todos os restantes são adjacentes a ele
+```
+
+### Q1
+
+#### 1. Dimensão, Número de Ligações, Densidade, e, Classificação da rede
+
+```{r}
+set.seed(2024) #para reprodutibilidade 
+
+#Dimensão/Número de nodos
+vcount(g) #a rede tem N=51 nodos
+
+#Número de ligações
+ecount(g) #a rede tem L=155 ligações
+
+#Determinar a densidade 
+L_max <- (51*(51-1))/2 #nº máximo possível de ligações 
+L_max #L_max = 1275
+edge_density(g) #os nodos da rede têm densidade d = 0.1215686
+
+#A rede é mundos pequenos e esparsa
+```
+
+#### 2. Grau médio, Distribuição de grau, e Caracterização da distribuição de grau (mediana, quartis, etc.).
+
+```{r}
+#Obter o grau médio
+mean(degree(g,mode='all')) #a média dos graus de todos os nodos na rede é <k> = 6.078431
+
+#Distribuição de grau e caracterização
+table(degree(g, mode='all')) #Tabela com a distribuição de grau
+
+#Grau de cada nodo
+graus <- degree(g, mode = "all", ) #variável com o grau de cada nodo na rede
+graus
+#plot do grafo com tamanho dos nodos de acordo o grau (nodos menores têm menor grau, e vice-versa)
+plot(g,vertex.size=graus*(2.5), vertex.color = "purple", vertex.label.color = "black", vertex.label.cex =0.8)
+
+summary(graus) 
+sd(graus) # desvio padrão
+boxplot(graus, col='pink') #existem 3 nodos na rede respetivamente com graus 12,19 e 20, que são considerados outliers no boxplot precisamente por serem tão elevados
+quantile(graus, probs = c(0.25, 0.5, 0.75)) # quartis
+
+```
+
+#### 3. Parâmetro de heterogeneidade, e Indicar o que se pode concluir quanto à existência de *hubs.*
+
+```{r}
+set.seed(2024) #para reprodutibilidade
+
+#Determinação do parâmetro de heterogeneidade (relativa aos graus dos nodos)
+k <- mean(graus*graus)/(mean(graus)^2)
+k # k = 2.305349 
+
+#Histograma da distribuição dos graus dos nodos
+hist(graus,breaks=0:vcount(g),main="Histograma do grau dos nodos", ylab='frequência (nº de nodos)', col='pink') 
+```
+
+### Q2.
+
+#### 1. Estudar a associação de grau e indicar o que poderá concluir-se.
+
+```{r}
+#Associação de grau dos nodos vizinhos/adjacentes para cada nodo na rede
+
+#Calcular medida de associação através do coeficiente de correlação de Pearson
+assortativity_degree(g,directed=F) #r = -0.2881953
+
+#Para confirmar a associação de grau foi calculada a medida de associação através do grau médio dos nodos adjacentes
+knn(g,directed=F) #<knn>
+```
+
+### Q3.
+
+#### 1. Determinar a média dos comprimentos dos caminhos mais curtos. Indicar o que pode concluir-se quanto à distância.
+
+```{r}
+distances(g) #analisando as distâncias dos caminhos mais curtos da rede, verifica-se que a maioria tem comprimento igual a 2, sendo que existem alguns poucos com distância 1
+
+is_connected(g) #a rede é conexa, ou seja, existem caminhos entre todos os pares de nodos
+
+diameter(g, directed=F) #diâmetro da rede
+
+#Calcular média dos comprimentos dos caminhos mais curtos
+mean_distance(g,directed=F) #a distância média de todos os caminhos mais curtos é de <l> = 1.878431
+```
+
+### Q4.
+
+#### 1. Determinar os coeficientes de *clustering* dos nodos e da rede. Calcular a média dos coeficientes de *clustering* dos nodos.
+
+```{r}
+#Coeficiente de clustering dos nodos
+transitivity(g,type="local") #representa a fração de pares de nodos adjacentes para determinado nodo que estão ligados entre si, os C(i) 
+
+
+#Média dos coeficientes de clustering dos nodos
+mean(transitivity(g, type = "local"), na.rm = TRUE) #o coeficiente de clustering médio é <C> = 0.6830309
+
+#Coeficiente de clustering da rede
+transitivity(g,type="global") #C = 0.2409519, representa o nº de triângulos existentes na rede comparado ao nº máximo possível de triângulos
+```
+
+#### 2. Conclusões quanto à Existência de triângulos.
+
+```{r}
+#Transitividade da rede
+transitivity(g) #transitividade da rede = 0.2409519
+
+#Número de triângulos que envolvem cada nodo na rede
+triangulos <- count_triangles(g) 
+triangulos
+
+sum(triangulos) # na rede existem no total 486 triângulos
+
+mean(count_triangles(g)) #em média, um nodo na rede está envolvido em aproximadamente 10 triângulos
+```
+
+### Q5.
+
+#### 1. Decomposição de *core* da rede, Número de *cores* existentes e a Dimensão de cada um.
+
+```{r}
+set.seed(2024) 
+
+#Nº de cores existentes na rede
+length(unique(coreness(g))) 
+
+unique(coreness(g)) #cores existentes na rede
+
+kc <- coreness(g) #para cada nodo devolve o core, ou seja, a que dimensão/grau pertence
+kc
+
+#Nodos pertencentes aos diferentes cores
+nodos_1_core <- V(g)[coreness(g) == 1]
+nodos_2_core <- V(g)[coreness(g) == 2]
+nodos_3_core <- V(g)[coreness(g) == 3]
+nodos_4_core <- V(g)[coreness(g) == 4]
+nodos_5_core <- V(g)[coreness(g) == 5]
+
+#Dimensão cada core
+length(nodos_1_core) #1-core tem 2 nodos
+length(nodos_2_core) #2-core tem 8 nodos
+length(nodos_3_core) #3-core tem 10 nodos
+length(nodos_4_core) #4-core tem 7 nodos
+length(nodos_5_core) #5-core tem 24 nodos
+
+#Grafo com a diferenciação do tamanho dos nodos consoante o core a que pertence
+plot(g, vertex.label=kc, vertex.size=kc*7, vertex.color = "purple", vertex.label.cex =0.8, vertex.label.color = "black")
+
+
+```
+
+### **Explorações Adicionais**
+
+Centralidade da rede
+
+```{r}
+
+closeness(g, normalized=T) #grau de centralidade de proximidade normalizada da rede g
+
+```
