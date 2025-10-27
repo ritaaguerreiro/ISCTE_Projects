@@ -1,5 +1,5 @@
 ---
-title: "Trabalho PACD2 final grupo_X"
+title: "Trabalho PACD2 final"
 format: revealjs
 editor: visual
 ---
@@ -4446,3 +4446,4 @@ grafico_freq_relativa <- ggplot() +
 plot(grafico_ocorrencias)
 plot(grafico_freq_relativa)
 ```
+
